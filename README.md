@@ -2,6 +2,8 @@
 
 **Sentinel Shift** es un gestor de cuadrantes y turnos de seguridad diseñado para optimizar la planificación de personal. Es una aplicación web moderna, rápida y con soporte PWA (Progressive Web App) para funcionar sin conexión.
 
+🌐 **Demo en vivo**: [turnos.dking.es](https://turnos.dking.es)
+
 ## 🚀 Tecnologías Utilizadas
 
 -   **Framework**: [React 18](https://react.dev/)
