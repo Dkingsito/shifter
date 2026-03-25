@@ -36,7 +36,7 @@ Para ejecutar este proyecto en tu entorno local, asegúrate de tener [Node.js](h
 
 1.  **Clonar el repositorio**:
     ```bash
-    git clone <URL_DEL_REPOSITORIO>
+    git clone https://github.com/Dkingsito/shifter
     cd shifter
     ```
 
