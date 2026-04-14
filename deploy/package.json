@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
-    "preview": "vite preview",
-    "deploy": "deploy\\sync-amp.bat"
+    "preview": "vite preview"
   },
   "dependencies": {
     "react": "^18.2.0",
