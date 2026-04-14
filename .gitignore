@@ -11,6 +11,7 @@ __VDS__LocalBackups/
 
 # Variables de Entorno
 .env
+deploy/.env
 .env.local
 .env.development.local
 .env.test.local
