@@ -149,6 +149,8 @@ const generateExport = async (elementId, fmt, filename) => {
             d.querySelectorAll('.day-cell').forEach(c => { c.style.boxShadow = 'none'; c.style.outline = 'none'; });
             // Eliminar badges de violación (los "!" rojos)
             d.querySelectorAll('.day-cell [class*="bg-red-600"]').forEach(badge => badge.remove());
+            // Eliminar SVG sueltos dentro de total-cell (Moon/Gift icons) que no renderizan bien
+            d.querySelectorAll('.total-cell svg').forEach(svg => svg.remove());
         }
     });
 
@@ -217,6 +219,14 @@ const Workspace = ({
   const [isExporting, setIsExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Rotación de turnos
+  const [showRotationModal, setShowRotationModal] = useState(false);
+  const [rotDaysOn, setRotDaysOn] = useState(4);
+  const [rotDaysOff, setRotDaysOff] = useState(2);
+  const [rotShift, setRotShift] = useState('');
+  const [rotOffset, setRotOffset] = useState(0);
+  const [rotTargetStaff, setRotTargetStaff] = useState('all');
   const [isMobile, setIsMobile] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedCells, setSelectedCells] = useState(new Set());
@@ -520,6 +530,25 @@ const Workspace = ({
     setShowConfirmModal(false); setPendingAction(null); setPendingId(null); setActiveCell(null);
   };
 
+  const applyRotation = () => {
+      const cycle = rotDaysOn + rotDaysOff;
+      const shiftCode = rotShift || Object.keys(shiftConfig[mode].types)[0];
+      setFullSchedule(prev => {
+          const newFull = { ...prev };
+          const monthData = { ...(newFull[monthKey] || {}) };
+          const targets = rotTargetStaff === 'all' ? staff : staff.filter(s => String(s.id) === String(rotTargetStaff));
+          targets.forEach(s => {
+              monthData[s.id] = Array.from({ length: daysInMonth }, (_, i) => {
+                  const pos = ((i - rotOffset) % cycle + cycle) % cycle;
+                  return pos < rotDaysOn ? shiftCode : 'L';
+              });
+          });
+          newFull[monthKey] = monthData;
+          return newFull;
+      });
+      setShowRotationModal(false);
+  };
+
   const handleExportClick = (fmt) => {
       setIsExporting(true); setActiveCell(null); setIsSelectionMode(false); setShowDesktopMenu(false); setShowMobileMenu(false);
       setTimeout(() =>
@@ -588,6 +617,7 @@ const Workspace = ({
                       <div className="p-2 bg-slate-50 border-b text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cuadrante</div>
                       <button onClick={() => { generateWhatsAppSummary(); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-green-700 font-medium"><Share2 className="w-4 h-4" /> Copiar resumen WhatsApp</button>
                       <button onClick={() => { setShowShiftModal(true); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-slate-700"><PlusCircle className="w-4 h-4 text-purple-600" /> Crear turno personalizado</button>
+                      <button onClick={() => { setRotOffset(0); setRotShift(Object.keys(shiftConfig[mode].types)[0]); setShowRotationModal(true); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-slate-700"><Calendar className="w-4 h-4 text-slate-600" /> Plantilla de rotación</button>
                       <div className="p-2 bg-slate-50 border-b border-t text-[10px] font-bold text-slate-500 uppercase tracking-wider">Guardar cuadrante</div>
                       <button onClick={() => { handleExportClick('jpg'); }} disabled={isExporting} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-slate-700 disabled:opacity-50">
                          {isExporting ? <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin inline-block" /> : <ImageIcon className="w-4 h-4" />} Guardar como JPG
@@ -664,6 +694,10 @@ const Workspace = ({
                  <button onClick={() => setShowShiftModal(true)} className="shrink-0 flex items-center gap-2 px-3 py-2 text-xs bg-purple-600 text-white rounded shadow hover:bg-purple-700 font-bold">
                     <PlusCircle className="w-4 h-4" />
                     <span className="hidden lg:inline">Turno</span>
+                 </button>
+                 <button onClick={() => { setRotOffset(0); setRotShift(Object.keys(shiftConfig[mode].types)[0]); setShowRotationModal(true); }} className="shrink-0 flex items-center gap-2 px-3 py-2 text-xs bg-slate-700 text-white rounded shadow hover:bg-slate-600 font-bold" title="Plantilla de rotación">
+                    <Calendar className="w-4 h-4" />
+                    <span className="hidden lg:inline">Rotación</span>
                  </button>
              </div>
           </div>
@@ -764,12 +798,17 @@ const Workspace = ({
                                 </button>
                             );
                         })}
-                        <div className={isExporting ? 'total-cell font-bold text-[9px] bg-white' : `w-24 md:w-28 shrink-0 flex flex-col justify-center items-start px-2 gap-0.5 sticky right-0 z-10 ${rowBg} border-l border-slate-200 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.06)]`}>
+                        <div className={isExporting ? 'total-cell bg-white' : `w-24 md:w-28 shrink-0 flex flex-col justify-center items-start px-2 gap-0.5 sticky right-0 z-10 ${rowBg} border-l border-slate-200 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.06)]`}>
                             {isExporting ? (
-                                <>
-                                  <span className={`${hClass} text-sm font-bold`}>T: {stats.total}</span>
-                                  <span className="flex items-center gap-1 text-slate-500"><Moon className="w-3 h-3" />{stats.night} <Gift className="w-3 h-3 ml-1" />{stats.festive}</span>
-                                </>
+                                <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',padding:'4px 6px'}}>
+                                    <span style={{fontWeight:'900',fontSize:'14px',color: stats.total > emp.hoursContract ? '#dc2626' : stats.total < emp.hoursContract - 12 ? '#d97706' : '#16a34a'}}>
+                                        T: {stats.total}h
+                                    </span>
+                                    <span style={{fontSize:'9px',color:'#64748b',display:'flex',gap:'8px'}}>
+                                        <span>🌙 {stats.night}</span>
+                                        <span>🎁 {stats.festive}</span>
+                                    </span>
+                                </div>
                             ) : (
                                 <>
                                   <div className="flex items-baseline gap-1 w-full">
@@ -951,6 +990,141 @@ const Workspace = ({
            </div>
       )}
       {activeCell && !isMobile && <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setActiveCell(null)} />}
+
+      {/* ── MODAL DE ROTACIÓN ─────────────────────────────────────── */}
+      {showRotationModal && (() => {
+          const cycle = rotDaysOn + rotDaysOff;
+          const activeShift = rotShift || Object.keys(shiftConfig[mode].types)[0];
+          const allShifts = { ...shiftConfig[mode].types, ...customShifts };
+          const presets = [
+              { label: '4×2', on: 4, off: 2 }, { label: '3×3', on: 3, off: 3 },
+              { label: '5×2', on: 5, off: 2 }, { label: '6×3', on: 6, off: 3 },
+              { label: '2×2', on: 2, off: 2 }, { label: '7×7', on: 7, off: 7 },
+          ];
+          return (
+          <div className="fixed inset-0 z-[3000] flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-white w-full md:max-w-lg rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
+              {/* Cabecera */}
+              <div className="bg-slate-800 text-white px-5 py-4 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-base">Plantilla de Rotación</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Aplica un patrón automático al cuadrante</p>
+                </div>
+                <button onClick={() => setShowRotationModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+              </div>
+
+              <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
+                {/* Presets rápidos */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Presets rápidos</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {presets.map(p => (
+                      <button key={p.label} onClick={() => { setRotDaysOn(p.on); setRotDaysOff(p.off); }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${rotDaysOn === p.on && rotDaysOff === p.off ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-500'}`}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Configuración manual */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Días trabajando</label>
+                    <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+                      <button onClick={() => setRotDaysOn(d => Math.max(1, d - 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">−</button>
+                      <span className="flex-1 text-center font-bold text-slate-800 text-lg">{rotDaysOn}</span>
+                      <button onClick={() => setRotDaysOn(d => Math.min(28, d + 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">+</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Días libres</label>
+                    <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+                      <button onClick={() => setRotDaysOff(d => Math.max(1, d - 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">−</button>
+                      <span className="flex-1 text-center font-bold text-slate-800 text-lg">{rotDaysOff}</span>
+                      <button onClick={() => setRotDaysOff(d => Math.min(28, d + 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">+</button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Turno a asignar */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Turno a asignar</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {Object.entries(allShifts).map(([c, d]) => (
+                      <button key={c} onClick={() => setRotShift(c)}
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${d.color} ${activeShift === c ? 'ring-2 ring-offset-1 ring-slate-700 scale-105' : 'opacity-70 hover:opacity-100'}`}>
+                        {c} <span className="font-normal opacity-70">{d.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Empleado destino */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Aplicar a</p>
+                  <select value={rotTargetStaff} onChange={e => setRotTargetStaff(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white text-slate-700 font-medium">
+                    <option value="all">Todos los empleados</option>
+                    {staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+
+                {/* Offset — ajuste de inicio */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Ajustar inicio del ciclo
+                    <span className="normal-case text-slate-400 font-normal ml-1">(desplaza el patrón día a día)</span>
+                  </p>
+                  <div className="flex items-center gap-3 mb-3">
+                    <button onClick={() => setRotOffset(o => o - 1)} className="w-10 h-10 rounded-xl bg-slate-800 text-white font-bold text-xl hover:bg-slate-700 flex items-center justify-center">‹</button>
+                    <div className="flex-1 text-center">
+                      <span className="text-2xl font-bold text-slate-800">{rotOffset >= 0 ? `+${rotOffset}` : rotOffset}</span>
+                      <span className="text-xs text-slate-400 ml-1">días</span>
+                    </div>
+                    <button onClick={() => setRotOffset(o => o + 1)} className="w-10 h-10 rounded-xl bg-slate-800 text-white font-bold text-xl hover:bg-slate-700 flex items-center justify-center">›</button>
+                    <button onClick={() => setRotOffset(0)} className="px-3 py-2 rounded-lg bg-slate-100 text-slate-500 text-xs font-bold hover:bg-slate-200">Reset</button>
+                  </div>
+
+                  {/* Preview interactivo — scroll horizontal */}
+                  <p className="text-[10px] text-slate-400 mb-1.5">Vista previa del mes ({MONTH_NAMES[month]})</p>
+                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <div className="flex min-w-max">
+                      {/* Números de día */}
+                      {Array.from({ length: daysInMonth }, (_, i) => {
+                          const pos = ((i - rotOffset) % cycle + cycle) % cycle;
+                          const isWorking = pos < rotDaysOn;
+                          const shiftData = allShifts[activeShift];
+                          const wknd = isWeekend(i);
+                          const holiday = isHoliday(i);
+                          return (
+                            <div key={i} className="flex flex-col items-center w-9 shrink-0">
+                              <div className={`w-full h-6 flex items-center justify-center text-[9px] font-bold border-r border-b ${holiday ? 'bg-red-700 text-white' : wknd ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                                {i + 1}
+                              </div>
+                              <div className={`w-full h-8 flex items-center justify-center text-[10px] font-bold border-r border-b border-slate-100 ${isWorking ? shiftData?.color || 'bg-blue-100 text-blue-800' : 'bg-white text-slate-200'}`}>
+                                {isWorking ? activeShift : ''}
+                              </div>
+                            </div>
+                          );
+                      })}
+                    </div>
+                  </div>
+                  <p className="text-[9px] text-slate-400 mt-1">Desliza para ver el mes completo · Usa ‹ › para ajustar</p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
+                <button onClick={() => setShowRotationModal(false)} className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200">Cancelar</button>
+                <button onClick={applyRotation} className="flex-1 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-sm hover:bg-slate-700">
+                  Aplicar plantilla
+                </button>
+              </div>
+            </div>
+          </div>
+          );
+      })()}
 
       {/* Toast de exportación */}
       {(isExporting || exportDone) && (
