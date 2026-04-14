@@ -143,8 +143,12 @@ const generateExport = async (elementId, fmt, filename) => {
 
             // Limpieza final
             d.querySelectorAll('.legend-square').forEach(l => { l.style.borderColor='#000'; l.style.height='24px'; l.style.width='32px'; l.style.display='flex'; l.style.alignItems='center'; l.style.justifyContent='center'; l.style.paddingBottom='0px'; l.style.lineHeight='1'; });
-            d.querySelectorAll('button .lucide-trash-2').forEach(i => i.parentElement.remove()); // Borrar papeleras
+            d.querySelectorAll('button .lucide-trash-2').forEach(i => i.parentElement.remove());
             d.querySelectorAll('.truncate').forEach(t => t.classList.remove('truncate'));
+            // Eliminar anillos de violación y cualquier ring de Tailwind
+            d.querySelectorAll('.day-cell').forEach(c => { c.style.boxShadow = 'none'; c.style.outline = 'none'; });
+            // Eliminar badges de violación (los "!" rojos)
+            d.querySelectorAll('.day-cell [class*="bg-red-600"]').forEach(badge => badge.remove());
         }
     });
 
@@ -524,7 +528,7 @@ const Workspace = ({
       800);
   };
 
-  const gridContainerClass = isExporting ? 'grid-container inline-block' : 'inline-block min-w-full bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden';
+  const gridContainerClass = isExporting ? 'grid-container inline-block' : 'inline-block min-w-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden';
   const rowClass = isExporting ? 'flex grid-row' : 'flex border-b border-slate-100 h-12 md:h-10 group bg-white';
   const headerRowClass = isExporting ? 'flex grid-row bg-slate-100' : 'flex border-b border-slate-200 h-10 bg-slate-100';
 
@@ -665,29 +669,29 @@ const Workspace = ({
           </div>
       </div>
 
-      <div className="bg-slate-100 p-2 flex justify-between items-center border-b border-slate-200">
-         <div className="flex items-center bg-white p-1 rounded border border-slate-300">
-            <button onClick={() => changeMonth(-1)} className="px-2 font-bold text-slate-500 hover:bg-slate-50">&lt;</button>
-            <span className="px-2 text-sm font-bold text-slate-700 w-32 text-center">{MONTH_NAMES[month]} {year}</span>
-            <button onClick={() => changeMonth(1)} className="px-2 font-bold text-slate-500 hover:bg-slate-50">&gt;</button>
+      <div className="bg-white px-4 py-2 flex justify-between items-center border-b-2 border-slate-100 shadow-sm">
+         <div className="flex items-center gap-1 bg-slate-800 rounded-lg overflow-hidden shadow">
+            <button onClick={() => changeMonth(-1)} className="px-3 py-1.5 font-bold text-slate-300 hover:bg-slate-700 transition-colors">&lt;</button>
+            <span className="px-3 py-1.5 text-sm font-bold text-white w-36 text-center tracking-wide">{MONTH_NAMES[month]} {year}</span>
+            <button onClick={() => changeMonth(1)} className="px-3 py-1.5 font-bold text-slate-300 hover:bg-slate-700 transition-colors">&gt;</button>
          </div>
-         <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 bg-white border rounded p-1">
-                <Clock className="w-3 h-3 text-slate-400" />
-                <input 
-                    type="time" 
-                    value={startHour} 
-                    onChange={(e) => setStartHour(e.target.value)} 
+         <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5">
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                <input
+                    type="time"
+                    value={startHour}
+                    onChange={(e) => setStartHour(e.target.value)}
                     className="text-xs font-mono outline-none text-slate-700 bg-transparent w-16"
                 />
             </div>
-            <div className="flex bg-white rounded border border-slate-300 overflow-hidden">
-                {['8H', '12H'].map(m => <button key={m} onClick={() => setMode(m)} className={`px-2 py-1 text-xs font-bold ${mode === m ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{m}</button>)}
+            <div className="flex bg-slate-800 rounded-lg overflow-hidden shadow">
+                {['8H', '12H'].map(m => <button key={m} onClick={() => setMode(m)} className={`px-3 py-1.5 text-xs font-bold transition-colors ${mode === m ? 'bg-blue-500 text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}>{m}</button>)}
             </div>
          </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 bg-slate-50" id="scroll-container">
+      <div className="flex-1 overflow-auto p-4 bg-slate-200" id="scroll-container">
         <div id="printable-area" className={gridContainerClass}>
             <div className="mb-6 border-b-2 border-slate-800 pb-4 hidden" style={{ display: isExporting ? 'block' : 'none' }}>
                 <div className="flex justify-between items-end">
@@ -696,24 +700,30 @@ const Workspace = ({
                 </div>
             </div>
 
-            <div className={isExporting ? 'flex grid-row bg-slate-100' : 'flex border-b border-slate-200 h-10 bg-slate-100'}>
-                <div className={isExporting ? 'name-cell font-bold text-slate-600 text-[10px] uppercase bg-slate-100' : 'w-32 md:w-48 shrink-0 flex items-center justify-center border-r border-slate-200 sticky left-0 z-10 bg-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]'}>
+            <div className={isExporting ? 'flex grid-row bg-slate-100' : 'flex border-b-2 border-slate-700 h-10 bg-slate-800'}>
+                <div className={isExporting ? 'name-cell font-bold text-slate-600 text-[10px] uppercase bg-slate-100' : 'w-32 md:w-48 shrink-0 flex items-center justify-center border-r border-slate-700 sticky left-0 z-10 bg-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.4)]'}>
                     <User className="w-4 h-4 text-slate-400" />
                 </div>
                 {Array.from({ length: daysInMonth }).map((_, i) => (
-                    <div key={i} onClick={() => toggleHoliday(i)} className={`${isExporting ? 'day-cell text-[10px] font-bold' : 'w-9 shrink-0 flex items-center justify-center border-r border-slate-200 cursor-pointer hover:bg-red-50 transition-colors'} ${isHoliday(i) ? 'bg-red-100 text-red-700' : (isWeekend(i) ? 'bg-slate-300 text-slate-700' : 'bg-slate-100 text-slate-400')}`}>
+                    <div key={i} onClick={() => toggleHoliday(i)}
+                        className={`${isExporting ? 'day-cell text-[10px] font-bold' : 'w-9 shrink-0 flex items-center justify-center border-r border-slate-700 cursor-pointer transition-colors'}
+                        ${isExporting
+                            ? (isHoliday(i) ? 'bg-red-100 text-red-700' : (isWeekend(i) ? 'bg-slate-300 text-slate-700' : 'bg-slate-100 text-slate-400'))
+                            : (isHoliday(i) ? 'bg-red-700 text-red-100 hover:bg-red-600' : (isWeekend(i) ? 'bg-slate-600 text-slate-300 hover:bg-slate-500' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'))
+                        }`}>
                         <span className="text-[10px] font-bold">{i + 1}</span>
                     </div>
                 ))}
-                <div className={isExporting ? 'total-cell font-bold text-[9px] bg-white' : 'w-24 md:w-28 shrink-0 flex items-center justify-center sticky right-0 z-10 bg-white border-l border-slate-200 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)] text-[10px] font-bold text-slate-600'}>Total</div>
+                <div className={isExporting ? 'total-cell font-bold text-[9px] bg-white' : 'w-24 md:w-28 shrink-0 flex items-center justify-center sticky right-0 z-10 bg-slate-800 text-slate-300 border-l border-slate-700 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.4)] text-[10px] font-bold'}>Total</div>
             </div>
 
-            {staff.map((emp) => {
+            {staff.map((emp, empIdx) => {
                 const stats = calculateStats(emp.id);
-                const hClass = stats.total > emp.hoursContract ? 'text-red-600 font-bold' : (stats.total < emp.hoursContract - 12 ? 'text-orange-500' : 'text-green-600');
+                const hClass = stats.total > emp.hoursContract ? 'text-red-500 font-bold' : (stats.total < emp.hoursContract - 12 ? 'text-amber-500' : 'text-emerald-600');
+                const rowBg = empIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50';
                 return (
-                    <div key={emp.id} className={isExporting ? 'flex grid-row' : 'flex border-b border-slate-100 h-12 md:h-10 group bg-white'}>
-                        <div className={isExporting ? 'name-cell text-sm font-bold text-slate-900 bg-white' : 'w-32 md:w-48 shrink-0 px-2 flex flex-col justify-center sticky left-0 z-10 bg-white border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] cursor-pointer hover:bg-slate-50'} onClick={() => handleRowSelect(emp.id)}>
+                    <div key={emp.id} className={isExporting ? 'flex grid-row' : `flex border-b border-slate-100 h-12 md:h-11 group ${rowBg}`}>
+                        <div className={isExporting ? 'name-cell text-sm font-bold text-slate-900 bg-white' : `w-32 md:w-48 shrink-0 px-2 flex flex-col justify-center sticky left-0 z-10 ${rowBg} border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] cursor-pointer hover:bg-blue-50 transition-colors`} onClick={() => handleRowSelect(emp.id)}>
                             <div className="flex justify-between items-center w-full">
                                 <div className="overflow-hidden">
                                     <span className="font-bold text-xs md:text-sm text-slate-900 block truncate">{emp.name}</span>
@@ -754,30 +764,40 @@ const Workspace = ({
                                 </button>
                             );
                         })}
-                        <div className={isExporting ? 'total-cell font-bold text-[9px] bg-white' : 'w-24 md:w-28 shrink-0 flex flex-col justify-center items-center sticky right-0 z-10 bg-white border-l border-slate-200 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)] text-[10px]'}>
-                            <div className={`flex items-center justify-between w-full px-1 mb-1 ${isExporting ? 'w-full justify-center mb-0 pb-0' : 'border-b border-slate-100 pb-1'}`}>
-                                {!isExporting && <span className="font-bold text-slate-500">T</span>}<span className={`${hClass} ${isExporting ? 'text-sm mb-1 font-bold' : ''}`}>{isExporting ? `T: ${stats.total}` : stats.total}</span>
-                            </div>
-                            <div className={`flex items-center w-full px-1 text-xs text-slate-400 ${isExporting ? 'justify-center gap-3 text-[10px]' : 'justify-between'}`}>
-                                <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> {stats.night}</span>
-                                <span className="flex items-center gap-1"><Gift className="w-3 h-3" /> {stats.festive}</span>
-                            </div>
+                        <div className={isExporting ? 'total-cell font-bold text-[9px] bg-white' : `w-24 md:w-28 shrink-0 flex flex-col justify-center items-start px-2 gap-0.5 sticky right-0 z-10 ${rowBg} border-l border-slate-200 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.06)]`}>
+                            {isExporting ? (
+                                <>
+                                  <span className={`${hClass} text-sm font-bold`}>T: {stats.total}</span>
+                                  <span className="flex items-center gap-1 text-slate-500"><Moon className="w-3 h-3" />{stats.night} <Gift className="w-3 h-3 ml-1" />{stats.festive}</span>
+                                </>
+                            ) : (
+                                <>
+                                  <div className="flex items-baseline gap-1 w-full">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase">Hrs</span>
+                                    <span className={`text-sm font-bold leading-none ${hClass}`}>{stats.total}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-slate-400">
+                                    <span className="flex items-center gap-0.5 text-[9px]"><Moon className="w-2.5 h-2.5" />{stats.night}</span>
+                                    <span className="flex items-center gap-0.5 text-[9px]"><Gift className="w-2.5 h-2.5" />{stats.festive}</span>
+                                  </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 );
             })}
 
             {!isExporting && (
-            <div className="flex border-t-2 border-slate-200 bg-slate-50 h-8 mt-1">
-                <div className="w-32 md:w-48 shrink-0 px-3 text-[10px] font-bold uppercase text-slate-500 border-r border-slate-200 flex items-center sticky left-0 z-10 bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+            <div className="flex border-t border-slate-200 bg-slate-800 h-7">
+                <div className="w-32 md:w-48 shrink-0 px-3 text-[9px] font-bold uppercase text-slate-400 border-r border-slate-700 flex items-center sticky left-0 z-10 bg-slate-800 tracking-widest">
                     Cobertura
                 </div>
                 {dailyCoverageStatus.map((status, i) => (
-                    <div key={i} className={`w-9 shrink-0 flex items-center justify-center border-r border-slate-200 text-[9px] font-bold ${status.isComplete ? 'text-green-600 bg-green-50' : 'text-white bg-red-500'}`}>
-                        {status.isComplete ? 'OK' : '!'}
+                    <div key={i} className={`w-9 shrink-0 flex items-center justify-center border-r border-slate-700 text-[8px] font-bold ${status.isComplete ? 'text-emerald-400 bg-slate-800' : 'text-red-300 bg-slate-800'}`}>
+                        {status.isComplete ? '✓' : '!'}
                     </div>
                 ))}
-                <div className="w-16 md:w-20 shrink-0 border-l border-slate-200 sticky right-0 bg-slate-50 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]"></div>
+                <div className="w-24 md:w-28 shrink-0 border-l border-slate-700 sticky right-0 bg-slate-800"></div>
             </div>
             )}
 
