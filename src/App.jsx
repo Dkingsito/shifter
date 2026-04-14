@@ -106,7 +106,7 @@ const generateExport = async (elementId, fmt, filename) => {
     window.scrollTo(0,0);
     
     const canvas = await html2canvas(input, {
-        scale: 3, useCORS: true, logging: false, backgroundColor: '#fff', windowWidth: input.scrollWidth + 100,
+        scale: 2, useCORS: true, logging: false, backgroundColor: '#fff', windowWidth: input.scrollWidth + 100,
         onclone: (doc) => {
             const d = doc.getElementById(elementId);
             d.style.width = 'max-content'; d.style.fontFamily = 'Arial';
@@ -154,7 +154,7 @@ const generateExport = async (elementId, fmt, filename) => {
     } else { 
         const pdf = new jsPDF('l','mm','a3');
         const props = pdf.getImageProperties(img); 
-        pdf.addImage(img, 'PNG', 0, 10, pdf.internal.pageSize.getWidth(), (props.height * pdf.internal.pageSize.getWidth()) / props.width); 
+        pdf.addImage(img, 'JPEG', 0, 10, pdf.internal.pageSize.getWidth(), (props.height * pdf.internal.pageSize.getWidth()) / props.width);
         pdf.save(`${filename}.pdf`); 
     }
 };
@@ -211,6 +211,8 @@ const Workspace = ({
   const [newShiftColor, setNewShiftColor] = useState(CUSTOM_COLORS[0].class);
 
   const [isExporting, setIsExporting] = useState(false);
+  const [exportDone, setExportDone] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedCells, setSelectedCells] = useState(new Set());
@@ -228,6 +230,13 @@ const Workspace = ({
   useEffect(() => localStorage.setItem(K('full_schedule'), JSON.stringify(fullSchedule)), [fullSchedule, projectId]);
   useEffect(() => localStorage.setItem(K('holidays'), JSON.stringify(customHolidays)), [customHolidays, projectId]);
   useEffect(() => localStorage.setItem(K('custom_shifts'), JSON.stringify(customShifts)), [customShifts, projectId]);
+
+  // Indicador de guardado automático
+  useEffect(() => {
+    setSaved(true);
+    const t = setTimeout(() => setSaved(false), 1800);
+    return () => clearTimeout(t);
+  }, [staff, fullSchedule, customHolidays, customShifts, mode, startHour]);
 
   // Mobile detection
   useEffect(() => {
@@ -508,8 +517,11 @@ const Workspace = ({
   };
 
   const handleExportClick = (fmt) => {
-      setIsExporting(true); setActiveCell(null); setIsSelectionMode(false);
-      setTimeout(() => generateExport('printable-area', fmt, `Cuadrante_${projectName.replace(/\s+/g,'_')}_${MONTH_NAMES[month]}_${year}`).then(() => setIsExporting(false)), 800);
+      setIsExporting(true); setActiveCell(null); setIsSelectionMode(false); setShowDesktopMenu(false); setShowMobileMenu(false);
+      setTimeout(() =>
+          generateExport('printable-area', fmt, `Cuadrante_${projectName.replace(/\s+/g,'_')}_${MONTH_NAMES[month]}_${year}`)
+              .then(() => { setIsExporting(false); setExportDone(true); setTimeout(() => setExportDone(false), 2500); }),
+      800);
   };
 
   const gridContainerClass = isExporting ? 'grid-container inline-block' : 'inline-block min-w-full bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden';
@@ -521,12 +533,12 @@ const Workspace = ({
       {/* HEADER */}
       <div className="bg-white border-b border-slate-200 p-3 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 shadow-sm relative z-40">
           <div className="flex items-center gap-2 group relative">
-             <div 
+             <div
                className="flex items-center gap-2 cursor-pointer"
                onClick={() => { if (!isRenamingService) setIsRenamingService(true); }}
              >
                 {isRenamingService ? (
-                    <input 
+                    <input
                         autoFocus
                         value={tempServiceName}
                         onChange={(e) => setTempServiceName(e.target.value)}
@@ -542,6 +554,10 @@ const Workspace = ({
                     </span>
                 )}
              </div>
+             {/* Indicador auto-guardado */}
+             <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded transition-all duration-500 ${saved ? 'bg-green-100 text-green-700 opacity-100' : 'opacity-0'}`}>
+               ✓ Guardado
+             </span>
           </div>
 
           {/* BARRA DE HERRAMIENTAS - ADAPTADA PARA MÓVIL */}
@@ -564,22 +580,25 @@ const Workspace = ({
                 {showMobileMenu && (
                    <>
                    <div className="fixed inset-0 z-40" onClick={() => setShowMobileMenu(false)}></div>
-                   {/* FIX: CAMBIADO A LEFT-0 PARA QUE ABRA HACIA LA DERECHA */}
-                   <div className="absolute top-full right-0 mt-2 w-56 bg-white shadow-xl rounded-lg border z-[2000] overflow-hidden">
-                      <button onClick={() => { setPendingAction('clear'); setShowConfirmModal(true); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex gap-2 hover:bg-slate-50"><Eraser className="w-4 h-4" /> Limpiar</button>
-                      <button onClick={() => { setShowShiftModal(true); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex gap-2 hover:bg-slate-50"><PlusCircle className="w-4 h-4" /> Crear Turno</button>
-                      {/* BOTÓN WHATSAPP MÓVIL */}
-                      <button onClick={() => { generateWhatsAppSummary(); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex gap-2 hover:bg-slate-50 text-green-600 font-medium"><Share2 className="w-4 h-4" /> Copiar Resumen</button>
-                      {/* BOTÓN DATOS NUBE (IMPORT/EXPORT) */}
-                      <button onClick={() => { onExportData(); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex gap-2 hover:bg-slate-50 text-blue-600"><UploadCloud className="w-4 h-4" /> Exportar</button>
-                      <button onClick={() => { onImportData(); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex gap-2 hover:bg-slate-50 text-blue-600"><DownloadCloud className="w-4 h-4" /> Importar</button>
-
+                   <div className="absolute top-full right-0 mt-2 w-60 bg-white shadow-xl rounded-lg border z-[2000] overflow-hidden">
+                      <div className="p-2 bg-slate-50 border-b text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cuadrante</div>
+                      <button onClick={() => { generateWhatsAppSummary(); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-green-700 font-medium"><Share2 className="w-4 h-4" /> Copiar resumen WhatsApp</button>
+                      <button onClick={() => { setShowShiftModal(true); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-slate-700"><PlusCircle className="w-4 h-4 text-purple-600" /> Crear turno personalizado</button>
+                      <div className="p-2 bg-slate-50 border-b border-t text-[10px] font-bold text-slate-500 uppercase tracking-wider">Guardar cuadrante</div>
+                      <button onClick={() => { handleExportClick('jpg'); }} disabled={isExporting} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-slate-700 disabled:opacity-50">
+                         {isExporting ? <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin inline-block" /> : <ImageIcon className="w-4 h-4" />} Guardar como JPG
+                      </button>
+                      <button onClick={() => { handleExportClick('pdf'); }} disabled={isExporting} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-slate-700 border-b border-slate-100 disabled:opacity-50">
+                         {isExporting ? <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin inline-block" /> : <FileIcon className="w-4 h-4" />} Guardar como PDF
+                      </button>
+                      <div className="p-2 bg-slate-50 border-b border-t text-[10px] font-bold text-slate-500 uppercase tracking-wider">Copia de seguridad</div>
+                      <button onClick={() => { onExportData(); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-blue-50 text-blue-700"><UploadCloud className="w-4 h-4" /> Hacer backup (.json)</button>
+                      <button onClick={() => { onImportData(); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-blue-50 text-blue-700 border-b border-slate-100"><DownloadCloud className="w-4 h-4" /> Restaurar backup</button>
                       {!isStandalone && (
-                        <button onClick={() => { if(installPrompt) onInstall(); else setShowInstallHelp(true); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex gap-2 hover:bg-slate-50 text-blue-600 font-medium border-t border-slate-100"><Download className="w-4 h-4" /> Instalar App</button>
+                        <button onClick={() => { if(installPrompt) onInstall(); else setShowInstallHelp(true); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-blue-600 font-medium border-b border-slate-100"><Download className="w-4 h-4" /> Instalar App</button>
                       )}
-                      <div className="border-t">
-                         <button onClick={() => { handleExportClick('jpg'); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex gap-2 hover:bg-slate-50"><ImageIcon className="w-4 h-4" /> Exportar JPG</button>
-                         <button onClick={() => { handleExportClick('pdf'); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex gap-2 hover:bg-slate-50"><FileIcon className="w-4 h-4" /> Exportar PDF</button>
+                      <div className="bg-red-50 border-t border-slate-100">
+                         <button onClick={() => { setPendingAction('clear'); setShowConfirmModal(true); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-red-100 text-red-600 font-medium"><Eraser className="w-4 h-4" /> Limpiar cuadrante</button>
                       </div>
                    </div>
                    </>
@@ -587,31 +606,61 @@ const Workspace = ({
              </div>
 
              {/* ACCIONES DESKTOP */}
-             <div className="hidden md:flex gap-2 order-2 relative">
-                 <button onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedCells(new Set()); setLastSelectedCell(null); }} className={`shrink-0 flex items-center gap-2 px-3 py-2 text-xs font-bold border rounded ${isSelectionMode ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}`}>
-                    {isSelectionMode ? <CheckSquare className="w-4 h-4" /> : <MousePointer2 className="w-4 h-4" />}<span className="hidden md:inline">{isSelectionMode ? 'Terminar' : 'Selección'}</span>
+             <div className="hidden md:flex gap-2 order-2 relative items-center">
+                 <button onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedCells(new Set()); setLastSelectedCell(null); }} className={`shrink-0 flex items-center gap-2 px-3 py-2 text-xs font-bold border rounded ${isSelectionMode ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                    {isSelectionMode ? <CheckSquare className="w-4 h-4" /> : <MousePointer2 className="w-4 h-4" />}
+                    <span className="hidden md:inline">{isSelectionMode ? 'Terminar' : 'Selección'}</span>
                  </button>
-                 
-                 {/* MENU DESKTOP UNIFICADO */}
+
+                 {/* Export rápido visible */}
+                 <button
+                    onClick={() => handleExportClick('jpg')}
+                    disabled={isExporting}
+                    title="Guardar cuadrante como imagen JPG"
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-bold border rounded bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                 >
+                    {isExporting ? <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin inline-block" /> : <ImageIcon className="w-4 h-4" />}
+                    <span className="hidden lg:inline">JPG</span>
+                 </button>
+                 <button
+                    onClick={() => handleExportClick('pdf')}
+                    disabled={isExporting}
+                    title="Guardar cuadrante como PDF"
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-bold border rounded bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                 >
+                    {isExporting ? <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin inline-block" /> : <FileIcon className="w-4 h-4" />}
+                    <span className="hidden lg:inline">PDF</span>
+                 </button>
+
+                 {/* MENU DESKTOP — Más opciones */}
                  <div className="relative">
-                    <button onClick={() => setShowDesktopMenu(!showDesktopMenu)} className="shrink-0 flex items-center gap-2 px-3 py-2 text-xs font-bold border rounded bg-white text-slate-600 hover:bg-slate-50"><Menu className="w-4 h-4" /> <span className="hidden lg:inline">Menú</span></button>
+                    <button onClick={() => setShowDesktopMenu(!showDesktopMenu)} className="shrink-0 flex items-center gap-2 px-3 py-2 text-xs font-bold border rounded bg-white text-slate-600 hover:bg-slate-50">
+                       <Menu className="w-4 h-4" />
+                    </button>
                     {showDesktopMenu && (
                         <>
                             <div className="fixed inset-0 z-30" onClick={() => setShowDesktopMenu(false)}></div>
-                            <div className="absolute top-full right-0 mt-2 w-56 bg-white shadow-xl rounded-lg border z-40 overflow-hidden animate-in fade-in zoom-in-95">
-                                <div className="p-2 bg-slate-50 border-b text-[10px] font-bold text-slate-500 uppercase">Exportar</div>
-                                <button onClick={() => { generateWhatsAppSummary(); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-slate-50 text-slate-700 border-b border-slate-50"><Share2 className="w-4 h-4" /> Copiar Resumen</button>
-                                <button onClick={() => { handleExportClick('jpg'); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-slate-50 text-slate-700 border-b border-slate-50"><ImageIcon className="w-4 h-4" /> Guardar como JPG</button><button onClick={() => { handleExportClick('pdf'); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-slate-50 text-slate-700"><FileIcon className="w-4 h-4" /> Guardar como PDF</button>
-                                <div className="p-2 bg-slate-50 border-b border-t text-[10px] font-bold text-slate-500 uppercase">Datos</div>
-                                <button onClick={() => { onExportData(); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-slate-50 text-blue-600 border-b border-slate-50"><UploadCloud className="w-4 h-4" /> Exportar</button>
-                                <button onClick={() => { onImportData(); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-slate-50 text-blue-600"><DownloadCloud className="w-4 h-4" /> Importar</button>
+                            <div className="absolute top-full right-0 mt-2 w-60 bg-white shadow-xl rounded-lg border z-40 overflow-hidden">
+                                <div className="p-2 bg-slate-50 border-b text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cuadrante</div>
+                                <button onClick={() => { generateWhatsAppSummary(); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-slate-50 text-slate-700 text-sm border-b border-slate-100"><Share2 className="w-4 h-4 text-green-600" /> Copiar resumen WhatsApp</button>
+                                <button onClick={() => setShowShiftModal(true) || setShowDesktopMenu(false)} className="w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-slate-50 text-slate-700 text-sm border-b border-slate-100"><PlusCircle className="w-4 h-4 text-purple-600" /> Crear turno personalizado</button>
+                                <div className="p-2 bg-slate-50 border-b border-t text-[10px] font-bold text-slate-500 uppercase tracking-wider">Copia de seguridad</div>
+                                <button onClick={() => { onExportData(); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-blue-50 text-blue-700 text-sm border-b border-slate-100"><UploadCloud className="w-4 h-4" /> Hacer backup (.json)</button>
+                                <button onClick={() => { onImportData(); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-blue-50 text-blue-700 text-sm border-b border-slate-100"><DownloadCloud className="w-4 h-4" /> Restaurar backup</button>
+                                <div className="p-2 bg-red-50 border-t border-slate-100">
+                                   <button onClick={() => { setPendingAction('clear'); setShowConfirmModal(true); setShowDesktopMenu(false); }} className="w-full text-left px-2 py-1.5 flex items-center gap-2 hover:bg-red-100 text-red-600 text-sm rounded">
+                                      <Eraser className="w-4 h-4" /> Limpiar cuadrante
+                                   </button>
+                                </div>
                             </div>
                         </>
                     )}
                  </div>
 
-                 <button onClick={() => { setPendingAction('clear'); setShowConfirmModal(true); }} className="shrink-0 flex items-center gap-2 px-3 py-2 text-xs bg-white text-slate-600 border rounded shadow-sm"><Eraser className="w-4 h-4" /> Limpiar</button>
-                 <button onClick={() => setShowShiftModal(true)} className="shrink-0 flex items-center gap-2 px-3 py-2 text-xs bg-purple-600 text-white rounded shadow hover:bg-purple-700"><PlusCircle className="w-4 h-4" /> <span className="hidden md:inline">Turno</span></button>
+                 <button onClick={() => setShowShiftModal(true)} className="shrink-0 flex items-center gap-2 px-3 py-2 text-xs bg-purple-600 text-white rounded shadow hover:bg-purple-700 font-bold">
+                    <PlusCircle className="w-4 h-4" />
+                    <span className="hidden lg:inline">Turno</span>
+                 </button>
              </div>
           </div>
       </div>
@@ -882,7 +931,18 @@ const Workspace = ({
            </div>
       )}
       {activeCell && !isMobile && <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setActiveCell(null)} />}
-      
+
+      {/* Toast de exportación */}
+      {(isExporting || exportDone) && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[4000] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold text-white transition-all"
+          style={{ background: exportDone ? '#16a34a' : '#1e40af' }}>
+          {isExporting
+            ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> Generando archivo…</>
+            : <><Check className="w-4 h-4" /> ¡Archivo descargado!</>
+          }
+        </div>
+      )}
+
       {showInstallHelp && (
         <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
@@ -943,26 +1003,41 @@ const SentinelProjectManager = () => {
   
   const handleExportData = () => {
       const data = {};
-      for(let i=0; i<localStorage.length; i++) {
+      for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          if(key.startsWith('sentinel_')) data[key] = localStorage.getItem(key);
+          if (key.startsWith('sentinel_')) data[key] = localStorage.getItem(key);
       }
-      const code = btoa(JSON.stringify(data));
-      navigator.clipboard.writeText(code).then(() => alert("¡Código de seguridad copiado! Guárdalo en un lugar seguro."));
+      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sentinel-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
   };
 
   const handleImportData = () => {
-      const code = prompt("Pega aquí tu código de seguridad:");
-      if (!code) return;
-      try {
-          const decoded = atob(code);
-          const data = JSON.parse(decoded);
-          Object.keys(data).forEach(k => localStorage.setItem(k, data[k]));
-          alert("Datos restaurados correctamente.");
-          window.location.reload();
-      } catch (e) {
-          alert("Código inválido o corrupto.");
-      }
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+              try {
+                  const data = JSON.parse(ev.target.result);
+                  if (!Object.keys(data).some(k => k.startsWith('sentinel_')))
+                      throw new Error('Formato inválido');
+                  Object.keys(data).forEach(k => localStorage.setItem(k, data[k]));
+                  window.location.reload();
+              } catch {
+                  alert('Archivo inválido. Asegúrate de usar un backup de Sentinel Shift.');
+              }
+          };
+          reader.readAsText(file);
+      };
+      input.click();
   };
 
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
