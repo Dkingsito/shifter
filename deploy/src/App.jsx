@@ -243,8 +243,16 @@ const Workspace = ({
   const [rotLcStart, setRotLcStart] = useState('larga');
 
   // Sincronización
+  const _syncViaQr = useRef(!!new URLSearchParams(window.location.search).get('sync'));
   const [showSyncModal, setShowSyncModal] = useState(false);
-  const [syncCode, setSyncCode] = useState(() => localStorage.getItem(`sentinel_sync_${projectId}`) || '');
+  const [syncCode, setSyncCode] = useState(() => {
+    const urlCode = new URLSearchParams(window.location.search).get('sync');
+    if (urlCode) {
+      window.history.replaceState({}, '', window.location.pathname);
+      return urlCode.toUpperCase();
+    }
+    return localStorage.getItem(`sentinel_sync_${projectId}`) || '';
+  });
   const [syncStatus, setSyncStatus] = useState('idle'); // idle | pushing | pulling | success-push | success-pull | error
   const [syncMessage, setSyncMessage] = useState('');
   const [syncLastAt, setSyncLastAt] = useState(() => localStorage.getItem(`sentinel_sync_last_${projectId}`) || '');
@@ -274,10 +282,21 @@ const Workspace = ({
   useEffect(() => { if (syncCode) localStorage.setItem(`sentinel_sync_${projectId}`, syncCode); }, [syncCode, projectId]);
   useEffect(() => { if (syncLastAt) localStorage.setItem(`sentinel_sync_last_${projectId}`, syncLastAt); }, [syncLastAt, projectId]);
 
+  // Sync — abrir modal automáticamente si la app se abrió desde un QR
+  useEffect(() => {
+    if (_syncViaQr.current) {
+      _syncViaQr.current = false;
+      setShowSyncModal(true);
+      setSyncCodeInput(syncCode);
+      checkSyncStatus(syncCode);
+    }
+  }, []);
+
   // Sync — generar QR cuando cambia el código
   useEffect(() => {
     if (!syncCode) { setSyncQrUrl(''); return; }
-    QRCode.toDataURL(syncCode, { width: 180, margin: 2, color: { dark: '#0f172a', light: '#ffffff' } })
+    const syncUrl = `${window.location.origin}/?sync=${syncCode}`;
+    QRCode.toDataURL(syncUrl, { width: 180, margin: 2, color: { dark: '#0f172a', light: '#ffffff' } })
       .then(url => setSyncQrUrl(url))
       .catch(() => setSyncQrUrl(''));
   }, [syncCode]);
