@@ -1,26 +1,39 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { 
-  ShieldCheck, Trash2, UserPlus, FileText, Menu, AlertTriangle, X, 
-  Image as ImageIcon, FileIcon, Eraser, Settings, Calendar, Edit3, 
-  User, Check, Moon, Gift, Briefcase, MousePointer2, CheckSquare, 
-  PlusCircle, FolderPlus, FolderOpen, ChevronDown, MoreVertical, 
+import QRCode from 'qrcode';
+import {
+  ShieldCheck, Trash2, UserPlus, FileText, Menu, AlertTriangle, X,
+  Image as ImageIcon, FileIcon, Eraser, Settings, Calendar, Edit3,
+  User, Check, Moon, Gift, Briefcase, MousePointer2, CheckSquare,
+  PlusCircle, FolderPlus, FolderOpen, ChevronDown, MoreVertical,
   Thermometer, Share2, Clock, AlertCircle, Download, HelpCircle,
-  UploadCloud, DownloadCloud
+  UploadCloud, DownloadCloud, RefreshCw, QrCode
 } from 'lucide-react';
 
 // --- CONSTANTES ---
 const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const FIXED_HOLIDAYS = ['1/0', '6/0', '1/4', '15/7', '12/9', '1/10', '6/11', '8/11', '25/11'];
-const CUSTOM_COLORS = [
-  { label: 'Rosa', class: 'bg-pink-100 text-pink-800 border-pink-200' },
-  { label: 'Morado', class: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200' },
-  { label: 'Cian', class: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
-  { label: 'Lima', class: 'bg-lime-100 text-lime-800 border-lime-200' },
-  { label: 'Gris Oscuro', class: 'bg-gray-700 text-white border-gray-600' },
-  { label: 'Amarillo', class: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-];
+// --- COLOR HELPERS para turnos custom (hex → inline styles) ---
+const hexToRgb = (hex) => ({
+  r: parseInt(hex.slice(1, 3), 16),
+  g: parseInt(hex.slice(3, 5), 16),
+  b: parseInt(hex.slice(5, 7), 16),
+});
+const shiftStyleFromHex = (hex) => {
+  const { r, g, b } = hexToRgb(hex);
+  return {
+    backgroundColor: `rgba(${r},${g},${b},0.18)`,
+    color: `rgb(${Math.round(r * 0.45)},${Math.round(g * 0.45)},${Math.round(b * 0.45)})`,
+    borderColor: `rgba(${r},${g},${b},0.5)`,
+  };
+};
+// Devuelve { cls, style } para usar en className + style
+const getShiftProps = (data) => {
+  if (!data) return { cls: '', style: {} };
+  if (data.colorHex) return { cls: 'border', style: shiftStyleFromHex(data.colorHex) };
+  return { cls: data.color || '', style: {} };
+};
 
 const INITIAL_STAFF = [
   { id: 1, name: 'Vigilante 1', hoursContract: 162, role: 'VS' },
@@ -211,10 +224,9 @@ const Workspace = ({
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [newShiftCode, setNewShiftCode] = useState('');
   const [newShiftDesc, setNewShiftDesc] = useState('');
-  const [newShiftHours, setNewShiftHours] = useState(''); 
-  const [newShiftStart, setNewShiftStart] = useState(''); 
-  const [newShiftNight, setNewShiftNight] = useState(0);
-  const [newShiftColor, setNewShiftColor] = useState(CUSTOM_COLORS[0].class);
+  const [newShiftStart, setNewShiftStart] = useState('');
+  const [newShiftEnd, setNewShiftEnd] = useState('');
+  const [newShiftColorHex, setNewShiftColorHex] = useState('#6366f1');
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
@@ -229,6 +241,17 @@ const Workspace = ({
   const [rotOffset, setRotOffset] = useState(0);
   const [rotTargetStaff, setRotTargetStaff] = useState('all');
   const [rotLcStart, setRotLcStart] = useState('larga');
+
+  // Sincronización
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [syncCode, setSyncCode] = useState(() => localStorage.getItem(`sentinel_sync_${projectId}`) || '');
+  const [syncStatus, setSyncStatus] = useState('idle'); // idle | pushing | pulling | success-push | success-pull | error
+  const [syncMessage, setSyncMessage] = useState('');
+  const [syncLastAt, setSyncLastAt] = useState(() => localStorage.getItem(`sentinel_sync_last_${projectId}`) || '');
+  const [syncServerAt, setSyncServerAt] = useState('');
+  const [syncQrUrl, setSyncQrUrl] = useState('');
+  const [syncCodeInput, setSyncCodeInput] = useState('');
+
   const [isMobile, setIsMobile] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedCells, setSelectedCells] = useState(new Set());
@@ -247,6 +270,18 @@ const Workspace = ({
   useEffect(() => localStorage.setItem(K('holidays'), JSON.stringify(customHolidays)), [customHolidays, projectId]);
   useEffect(() => localStorage.setItem(K('custom_shifts'), JSON.stringify(customShifts)), [customShifts, projectId]);
 
+  // Sync — persistencia código y última sync
+  useEffect(() => { if (syncCode) localStorage.setItem(`sentinel_sync_${projectId}`, syncCode); }, [syncCode, projectId]);
+  useEffect(() => { if (syncLastAt) localStorage.setItem(`sentinel_sync_last_${projectId}`, syncLastAt); }, [syncLastAt, projectId]);
+
+  // Sync — generar QR cuando cambia el código
+  useEffect(() => {
+    if (!syncCode) { setSyncQrUrl(''); return; }
+    QRCode.toDataURL(syncCode, { width: 180, margin: 2, color: { dark: '#0f172a', light: '#ffffff' } })
+      .then(url => setSyncQrUrl(url))
+      .catch(() => setSyncQrUrl(''));
+  }, [syncCode]);
+
   // Indicador de guardado automático
   useEffect(() => {
     setSaved(true);
@@ -262,13 +297,6 @@ const Workspace = ({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  useEffect(() => {
-      if (newShiftStart !== '' && newShiftHours > 0) {
-          const s = timeToDecimal(newShiftStart);
-          const d = parseFloat(newShiftHours);
-          setNewShiftNight(calculateNightHoursForShift(s, d));
-      }
-  }, [newShiftStart, newShiftHours]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -474,30 +502,25 @@ const Workspace = ({
   }, [currentSchedule, staff, mode, shiftConfig, daysInMonth, customShifts]);
 
   const saveCustomShift = () => {
-      if (!newShiftCode || !newShiftDesc) return alert("Código y descripción requeridos");
-      const hours = parseFloat(newShiftHours);
-      if (hours > 12) return alert("⚠️ Máximo 12 horas por turno.");
-
-      let description = `${hours}h`;
-      if (newShiftStart !== '') {
-          const startDec = timeToDecimal(newShiftStart);
-          const endDec = (startDec + hours) % 24;
-          description = `${newShiftStart}-${decimalToTime(endDec)}`;
-      }
-
+      if (!newShiftCode || !newShiftDesc || !newShiftStart || !newShiftEnd) return;
+      const startDec = timeToDecimal(newShiftStart);
+      const endDec = timeToDecimal(newShiftEnd);
+      const hours = ((endDec - startDec) + 24) % 24;
+      const nightHours = calculateNightHoursForShift(startDec, hours);
       setCustomShifts(p => ({
-          ...p, 
-          [newShiftCode.toUpperCase()]: { 
-              label: newShiftDesc, 
-              hours: hours, 
-              nightHours: parseFloat(newShiftNight), 
-              color: newShiftColor, 
-              desc: description,
-              startTime: newShiftStart 
+          ...p,
+          [newShiftCode.toUpperCase()]: {
+              label: newShiftDesc,
+              hours,
+              nightHours,
+              colorHex: newShiftColorHex,
+              color: '',
+              desc: `${newShiftStart}-${newShiftEnd}`,
+              startTime: newShiftStart,
           }
       }));
-      setShowShiftModal(false); 
-      setNewShiftCode(''); setNewShiftDesc(''); setNewShiftHours(''); setNewShiftStart(''); setNewShiftNight(0);
+      setShowShiftModal(false);
+      setNewShiftCode(''); setNewShiftDesc(''); setNewShiftStart(''); setNewShiftEnd('');
   };
 
   const deleteCustomShift = (code) => {
@@ -531,6 +554,93 @@ const Workspace = ({
     }
     setShowConfirmModal(false); setPendingAction(null); setPendingId(null); setActiveCell(null);
   };
+
+  // ── SYNC ──────────────────────────────────────────────────────────────────
+  const SYNC_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const generateSyncCode = () =>
+    Array.from({ length: 6 }, () => SYNC_CHARS[Math.floor(Math.random() * SYNC_CHARS.length)]).join('');
+
+  const timeAgo = (iso) => {
+    if (!iso) return null;
+    const s = (Date.now() - new Date(iso)) / 1000;
+    if (s < 60) return 'hace un momento';
+    if (s < 3600) return `hace ${Math.floor(s / 60)} min`;
+    if (s < 86400) return `hace ${Math.floor(s / 3600)}h`;
+    return `hace ${Math.floor(s / 86400)} días`;
+  };
+
+  const getSyncData = () => ({ staff, fullSchedule, customHolidays, customShifts, mode, startHour, projectName });
+
+  const applySyncData = (data) => {
+    if (data.staff)         setStaff(data.staff);
+    if (data.fullSchedule)  setFullSchedule(data.fullSchedule);
+    if (data.customHolidays) setCustomHolidays(data.customHolidays);
+    if (data.customShifts)  setCustomShifts(data.customShifts);
+    if (data.mode)          setMode(data.mode);
+    if (data.startHour !== undefined) setStartHour(data.startHour);
+  };
+
+  const handleSyncPush = async () => {
+    if (!syncCode) return;
+    setSyncStatus('pushing');
+    try {
+      const res = await fetch(`/api/sync/${syncCode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: getSyncData() }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Error servidor');
+      const now = new Date().toISOString();
+      setSyncLastAt(now);
+      setSyncServerAt(now);
+      setSyncStatus('success-push');
+      setSyncMessage('Datos subidos correctamente');
+    } catch (e) {
+      setSyncStatus('error');
+      setSyncMessage(e.message);
+    }
+  };
+
+  const handleSyncPull = async () => {
+    if (!syncCode) return;
+    setSyncStatus('pulling');
+    try {
+      const res = await fetch(`/api/sync/${syncCode}`);
+      if (res.status === 404) throw new Error('Código no encontrado en el servidor');
+      if (!res.ok) throw new Error((await res.json()).error || 'Error servidor');
+      const { data, updated_at } = await res.json();
+      applySyncData(data);
+      const now = new Date().toISOString();
+      setSyncLastAt(now);
+      setSyncServerAt(updated_at);
+      setSyncStatus('success-pull');
+      setSyncMessage('Datos descargados correctamente');
+    } catch (e) {
+      setSyncStatus('error');
+      setSyncMessage(e.message);
+    }
+  };
+
+  const checkSyncStatus = async (code) => {
+    if (!code) return;
+    try {
+      const res = await fetch(`/api/sync/${code}/status`);
+      if (!res.ok) return;
+      const { updated_at } = await res.json();
+      setSyncServerAt(updated_at);
+    } catch {}
+  };
+
+  const openSyncModal = () => {
+    setSyncStatus('idle');
+    setSyncMessage('');
+    setSyncCodeInput(syncCode);
+    setShowSyncModal(true);
+    checkSyncStatus(syncCode);
+  };
+
+  const serverNewerThanLocal = syncServerAt && syncLastAt && new Date(syncServerAt) > new Date(syncLastAt);
+  // ─────────────────────────────────────────────────────────────────────────
 
   const applyRotation = () => {
       const shiftCode = rotShift || Object.keys(shiftConfig[mode].types)[0];
@@ -637,7 +747,17 @@ const Workspace = ({
              {/* 2. BOTÓN ALTA VS (CENTRO/EXPANDIDO) */}
              <button onClick={() => { setInputMode('add'); setInputName(''); setInputRole('VS'); setShowInputModal(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 text-xs bg-blue-600 text-white rounded shadow hover:bg-blue-700 font-bold md:ml-auto order-2 md:order-3"><UserPlus className="w-4 h-4" /> <span className="hidden md:inline">Alta Personal</span><span className="md:hidden">Alta</span></button>
 
-             {/* 3. MENÚ MÓVIL (DERECHA) */}
+             {/* 3. BOTÓN SYNC (MÓVIL) */}
+             <button
+               onClick={openSyncModal}
+               className={`md:hidden relative p-2 border rounded transition-colors ${serverNewerThanLocal ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200'}`}
+               title="Sincronizar"
+             >
+               <RefreshCw className="w-5 h-5" />
+               {serverNewerThanLocal && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white" />}
+             </button>
+
+             {/* 4. MENÚ MÓVIL (DERECHA) */}
              <div className="md:hidden relative order-3">
                 <button onClick={() => setShowMobileMenu(!showMobileMenu)} className="p-2 border rounded bg-slate-100 text-slate-600"><MoreVertical className="w-5 h-5"/></button>
                 {showMobileMenu && (
@@ -674,6 +794,17 @@ const Workspace = ({
                  <button onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedCells(new Set()); setLastSelectedCell(null); }} className={`shrink-0 flex items-center gap-2 px-3 py-2 text-xs font-bold border rounded ${isSelectionMode ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                     {isSelectionMode ? <CheckSquare className="w-4 h-4" /> : <MousePointer2 className="w-4 h-4" />}
                     <span className="hidden md:inline">{isSelectionMode ? 'Terminar' : 'Selección'}</span>
+                 </button>
+
+                 {/* SYNC DESKTOP */}
+                 <button
+                    onClick={openSyncModal}
+                    title="Sincronizar cuadrante"
+                    className={`relative shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-bold border rounded transition-colors ${serverNewerThanLocal ? 'bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                 >
+                    <RefreshCw className="w-4 h-4" />
+                    <span className="hidden lg:inline">Sync</span>
+                    {serverNewerThanLocal && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white" />}
                  </button>
 
                  {/* Export rápido visible */}
@@ -812,15 +943,19 @@ const Workspace = ({
                             const violationClass = violation && !isSel ? 'ring-2 ring-red-600 ring-inset z-20' : '';
                             const borderClass = isSel ? '!bg-indigo-600 !text-white !border-indigo-700 z-30 shadow-md ring-1 ring-white' : (isActive ? 'bg-blue-600 text-white z-20 shadow-lg scale-110' : '');
 
-                            const baseClass = isExporting 
-                                ? `day-cell text-[10px] font-bold ${isValid ? data.color : (holiday ? 'bg-red-100 text-red-700' : (wknd ? 'bg-slate-300' : ''))}` 
-                                : `w-9 shrink-0 flex items-center justify-center border-r border-slate-100 text-[10px] md:text-xs font-bold transition-all relative ${holiday && !isValid ? 'bg-red-100 text-red-700' : ''} ${wknd && !isValid && !holiday ? 'bg-slate-300 text-slate-700' : ''} ${isValid ? data.color : (data ? '' : 'bg-slate-50 text-slate-300 line-through')} active:scale-95 ${borderClass} ${violationClass}`;
-                            
+                            const shiftSp = isValid ? getShiftProps(data) : null;
+                            const colorCls = shiftSp?.cls || '';
+                            const colorStyle = (borderClass === '' && shiftSp?.style) ? shiftSp.style : {};
+                            const baseClass = isExporting
+                                ? `day-cell text-[10px] font-bold ${isValid ? colorCls : (holiday ? 'bg-red-100 text-red-700' : (wknd ? 'bg-slate-300' : ''))}`
+                                : `w-9 shrink-0 flex items-center justify-center border-r border-slate-100 text-[10px] md:text-xs font-bold transition-all relative ${holiday && !isValid ? 'bg-red-100 text-red-700' : ''} ${wknd && !isValid && !holiday ? 'bg-slate-300 text-slate-700' : ''} ${isValid ? colorCls : (data ? '' : 'bg-slate-50 text-slate-300 line-through')} active:scale-95 ${borderClass} ${violationClass}`;
+
                             return (
-                                <button 
-                                    key={d} 
-                                    onClick={(e) => handleCellClick(e, emp.id, d)} 
+                                <button
+                                    key={d}
+                                    onClick={(e) => handleCellClick(e, emp.id, d)}
                                     className={baseClass}
+                                    style={colorStyle}
                                     title={violation ? `Descanso insuficiente` : ''}
                                 >
                                     {shift !== 'L' && shift}
@@ -874,7 +1009,7 @@ const Workspace = ({
                 <div className="text-[10px] text-slate-500 flex flex-wrap gap-4 mt-8">
                   <span className="font-bold uppercase text-slate-700">Leyenda:</span>
                   {Object.entries(shiftConfig[mode].types).map(([c, d]) => (<span key={c} className="flex items-center gap-1"><span className="font-bold border border-slate-300 px-1 bg-white text-slate-800 legend-square">{c}</span><span>{d.label} <span className="text-slate-400 font-mono ml-1">({d.desc})</span></span></span>))}
-                  {Object.entries(customShifts).map(([c, d]) => (<span key={c} className="flex items-center gap-1"><span className={`font-bold border border-slate-300 px-1 legend-square ${d.color}`}>{c}</span><span>{d.label} <span className="text-slate-400 font-mono ml-1">({d.desc})</span></span></span>))}
+                  {Object.entries(customShifts).map(([c, d]) => { const sp = getShiftProps(d); return (<span key={c} className="flex items-center gap-1"><span className={`font-bold border px-1 legend-square ${sp.cls}`} style={sp.style}>{c}</span><span>{d.label} <span className="text-slate-400 font-mono ml-1">({d.desc})</span></span></span>); })}
                   <span className="flex items-center gap-1"><span className="font-bold border border-slate-300 px-1 bg-white text-slate-800 legend-square">V</span> Vacaciones</span>
                 </div>
             </div>
@@ -892,12 +1027,12 @@ const Workspace = ({
                             <span className="text-[9px] whitespace-nowrap">{d.desc}</span>
                         </button>
                     ))}
-                    {Object.entries(customShifts).map(([c, d]) => (
-                        <button key={c} onClick={() => applyMultiShift(c)} className={`px-3 py-2 rounded border flex flex-col items-center justify-center min-w-[3.5rem] transition-transform active:scale-95 ${d.color}`}>
+                    {Object.entries(customShifts).map(([c, d]) => { const sp = getShiftProps(d); return (
+                        <button key={c} onClick={() => applyMultiShift(c)} className={`px-3 py-2 rounded border flex flex-col items-center justify-center min-w-[3.5rem] transition-transform active:scale-95 ${sp.cls}`} style={sp.style}>
                             <span className="font-bold">{c}</span>
                             <span className="text-[9px] whitespace-nowrap">{d.desc}</span>
                         </button>
-                    ))}
+                    ); })}
                     <div className="w-px bg-slate-300 mx-1"></div>
                     <button onClick={() => applyMultiShift('L')} className="px-3 py-2 rounded border bg-slate-100 text-slate-500 flex flex-col items-center justify-center min-w-[3.5rem]">
                         <span className="font-bold">L</span>
@@ -927,22 +1062,145 @@ const Workspace = ({
         </div>
       )}
 
-      {showShiftModal && (
-          <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-              <div className="bg-white p-6 rounded-lg shadow-xl w-80">
-                  <h3 className="font-bold text-lg mb-4">Crear Turno</h3>
-                  <input maxLength={2} value={newShiftCode} onChange={e => setNewShiftCode(e.target.value.toUpperCase())} placeholder="Código (Ej: R)" className="w-full p-2 border rounded mb-2 uppercase font-bold" />
-                  <input value={newShiftDesc} onChange={e => setNewShiftDesc(e.target.value)} placeholder="Descripción" className="w-full p-2 border rounded mb-2" />
-                  <div className="flex gap-2 mb-2"><input type="number" value={newShiftHours} onChange={e => setNewShiftHours(e.target.value)} placeholder="Horas" className="w-1/3 p-2 border rounded" /><input type="time" value={newShiftStart} onChange={e => setNewShiftStart(e.target.value)} className="w-1/3 p-2 border rounded" /><input type="number" value={newShiftNight} onChange={e => setNewShiftNight(e.target.value)} placeholder="Noc." className="w-1/3 p-2 border rounded" /></div>
-                  <div className="flex gap-1 flex-wrap mb-4">{CUSTOM_COLORS.map(c => <button key={c.label} onClick={() => setNewShiftColor(c.class)} className={`w-6 h-6 rounded-full border ${c.class.split(' ')[0]} ${newShiftColor === c.class ? 'ring-2 ring-blue-500' : ''}`} />)}</div>
-                  <div className="flex gap-2 mb-4">
-                      <button onClick={() => setShowShiftModal(false)} className="flex-1 p-2 bg-slate-200 rounded">Cancelar</button>
-                      <button onClick={saveCustomShift} className="flex-1 p-2 bg-purple-600 text-white rounded">Guardar</button>
-                  </div>
-                  {Object.keys(customShifts).length > 0 && (<div className="border-t pt-4"><h4 className="text-xs font-bold text-slate-500 mb-2 uppercase">Turnos Personalizados</h4><div className="space-y-2">{Object.entries(customShifts).map(([code, data]) => (<div key={code} className="flex justify-between items-center bg-slate-50 p-2 rounded border"><div className="flex items-center gap-2"><span className={`font-bold border px-1 rounded ${data.color}`}>{code}</span><span className="text-xs text-slate-600">{data.label} ({data.desc})</span></div><button onClick={() => deleteCustomShift(code)} className="text-red-400 hover:text-red-600 bg-white p-1 rounded border border-red-100"><Trash2 className="w-3 h-3" /></button></div>))}</div></div>)}
+      {showShiftModal && (() => {
+          const startDec = newShiftStart ? timeToDecimal(newShiftStart) : null;
+          const endDec = newShiftEnd ? timeToDecimal(newShiftEnd) : null;
+          const durationHours = (startDec !== null && endDec !== null) ? ((endDec - startDec + 24) % 24) : 0;
+          const durationH = Math.floor(durationHours);
+          const durationM = Math.round((durationHours - durationH) * 60);
+          const nightH = (startDec !== null && durationHours > 0) ? calculateNightHoursForShift(startDec, durationHours) : 0;
+          const previewStyle = shiftStyleFromHex(newShiftColorHex);
+          const hasAll = newShiftCode && newShiftStart && newShiftEnd;
+          const QUICK_COLORS = ['#6366f1','#f97316','#10b981','#f43f5e','#8b5cf6','#0ea5e9','#eab308','#14b8a6','#ec4899','#64748b'];
+          return (
+          <div className="fixed inset-0 z-[3000] flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-white w-full md:max-w-md rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
+              <div className="bg-slate-800 text-white px-5 py-4 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-base">Nuevo turno</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Personaliza y previsualiza antes de guardar</p>
+                </div>
+                <button onClick={() => setShowShiftModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
               </div>
+
+              <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+                {/* Preview en vivo */}
+                <div className="flex items-center gap-4 bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <div className="w-14 h-14 rounded-xl border-2 flex items-center justify-center font-bold text-xl shrink-0"
+                    style={previewStyle}>
+                    {newShiftCode || '?'}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-800 text-sm truncate">{newShiftDesc || 'Nombre del turno'}</p>
+                    {hasAll ? (
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {newShiftStart} → {newShiftEnd}
+                        {' · '}{durationH > 0 ? `${durationH}h` : ''}{durationM > 0 ? ` ${durationM}min` : ''}
+                        {nightH > 0 ? ` · 🌙 ${nightH}h` : ''}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-400 mt-0.5">Completa los campos para ver el preview</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Código + Nombre */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Código</label>
+                    <input maxLength={2} value={newShiftCode} onChange={e => setNewShiftCode(e.target.value.toUpperCase())}
+                      placeholder="M7"
+                      className="w-full p-2.5 border border-slate-300 rounded-lg uppercase font-bold text-center text-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Nombre</label>
+                    <input value={newShiftDesc} onChange={e => setNewShiftDesc(e.target.value)}
+                      placeholder="Ej: Mañana larga"
+                      className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                  </div>
+                </div>
+
+                {/* Horario: entrada → salida */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Horario</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[10px] text-slate-400 mb-1">Entrada</p>
+                      <input type="time" value={newShiftStart} onChange={e => setNewShiftStart(e.target.value)}
+                        className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 mb-1">Salida</p>
+                      <input type="time" value={newShiftEnd} onChange={e => setNewShiftEnd(e.target.value)}
+                        className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                    </div>
+                  </div>
+                  {hasAll && durationHours > 0 && (
+                    <div className="mt-2 flex items-center gap-3 text-xs bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                      <span className="font-bold text-slate-700">
+                        {durationH > 0 ? `${durationH}h` : ''}{durationM > 0 ? ` ${durationM}min` : ''}
+                      </span>
+                      {nightH > 0 && <span className="text-indigo-600 font-medium">🌙 {nightH}h nocturnas (auto)</span>}
+                    </div>
+                  )}
+                </div>
+
+                {/* Color libre */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Color</label>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="relative cursor-pointer shrink-0">
+                      <input type="color" value={newShiftColorHex} onChange={e => setNewShiftColorHex(e.target.value)}
+                        className="sr-only" />
+                      <div className="w-10 h-10 rounded-xl border-2 border-slate-300 shadow-inner flex items-center justify-center text-xs font-bold overflow-hidden"
+                        style={{ background: newShiftColorHex }}>
+                      </div>
+                    </label>
+                    <span className="text-sm font-mono text-slate-600">{newShiftColorHex.toUpperCase()}</span>
+                    <div className="flex gap-1.5 flex-wrap ml-auto">
+                      {QUICK_COLORS.map(c => (
+                        <button key={c} onClick={() => setNewShiftColorHex(c)}
+                          style={{ background: c }}
+                          className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${newShiftColorHex === c ? 'border-slate-800 scale-110' : 'border-white shadow'}`} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Turnos existentes */}
+                {Object.keys(customShifts).length > 0 && (
+                  <div className="border-t border-slate-100 pt-4">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Mis turnos</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(customShifts).map(([code, data]) => {
+                        const sp = getShiftProps(data);
+                        return (
+                          <div key={code} className={`flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg border text-xs font-bold ${sp.cls}`} style={sp.style}>
+                            <span>{code}</span>
+                            <span className="font-normal opacity-70">{data.label}</span>
+                            <button onClick={() => deleteCustomShift(code)} className="ml-0.5 opacity-50 hover:opacity-100">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
+                <button onClick={() => setShowShiftModal(false)} className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200">Cancelar</button>
+                <button onClick={saveCustomShift}
+                  disabled={!newShiftCode || !newShiftDesc || !newShiftStart || !newShiftEnd}
+                  className="flex-1 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-sm hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                  Guardar turno
+                </button>
+              </div>
+            </div>
           </div>
-      )}
+          );
+      })()}
       
       {showConfirmModal && (
             <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in">
@@ -967,12 +1225,12 @@ const Workspace = ({
                        <span className="text-[10px] font-medium opacity-80">{d.desc}</span>
                     </button>
                   ))}
-                  {Object.entries(customShifts).map(([c, d]) => (
-                     <button key={c} onClick={() => setShift(activeCell.staffId, activeCell.dayIndex, c)} className={`p-2 border rounded flex flex-col items-center justify-center transition-transform hover:scale-105 ${d.color}`}>
+                  {Object.entries(customShifts).map(([c, d]) => { const sp = getShiftProps(d); return (
+                     <button key={c} onClick={() => setShift(activeCell.staffId, activeCell.dayIndex, c)} className={`p-2 border rounded flex flex-col items-center justify-center transition-transform hover:scale-105 ${sp.cls}`} style={sp.style}>
                        <span className="font-bold text-lg">{c}</span>
                        <span className="text-[10px] font-medium opacity-80">{d.desc}</span>
                     </button>
-                  ))}
+                  ); })}
                   <button onClick={() => setShift(activeCell.staffId, activeCell.dayIndex, 'L')} className="p-2 border rounded bg-slate-100 text-slate-500 flex flex-col items-center justify-center hover:bg-slate-200">
                      <span className="font-bold">L</span>
                      <span className="text-[9px]">Libre</span>
@@ -1005,11 +1263,11 @@ const Workspace = ({
                        </button>
                      ))}
                      {/* TURNOS PERSONALIZADOS */}
-                     {Object.entries(customShifts).map(([c, d]) => (
-                       <button key={c} onClick={() => setShift(activeCell.staffId, activeCell.dayIndex, c)} className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-transform active:scale-95 ${d.color.replace('bg-', 'bg-').replace('text-', 'text-').replace('border-', 'border-')}`}>
+                     {Object.entries(customShifts).map(([c, d]) => { const sp = getShiftProps(d); return (
+                       <button key={c} onClick={() => setShift(activeCell.staffId, activeCell.dayIndex, c)} className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-transform active:scale-95 ${sp.cls}`} style={sp.style}>
                          <span className="text-2xl font-bold">{c}</span><span className="text-[10px] opacity-70 mt-1">{d.desc}</span>
                        </button>
-                     ))}
+                     ); })}
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                      <button onClick={() => setShift(activeCell.staffId, activeCell.dayIndex, 'L')} className="p-3 rounded-lg border text-sm font-bold bg-slate-100 text-slate-500 border-slate-200">Libre</button>
@@ -1139,12 +1397,13 @@ const Workspace = ({
                 <div>
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Turno a asignar</p>
                   <div className="flex gap-2 flex-wrap">
-                    {Object.entries(allShifts).map(([c, d]) => (
+                    {Object.entries(allShifts).map(([c, d]) => { const sp = getShiftProps(d); return (
                       <button key={c} onClick={() => setRotShift(c)}
-                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${d.color} ${activeShift === c ? 'ring-2 ring-offset-1 ring-slate-700 scale-105' : 'opacity-70 hover:opacity-100'}`}>
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${sp.cls} ${activeShift === c ? 'ring-2 ring-offset-1 ring-slate-700 scale-105' : 'opacity-70 hover:opacity-100'}`}
+                        style={sp.style}>
                         {c} <span className="font-normal opacity-70">{d.desc}</span>
                       </button>
-                    ))}
+                    ); })}
                   </div>
                 </div>
 
@@ -1207,9 +1466,12 @@ const Workspace = ({
                                   {DAY_LETTERS[wd]}
                                 </div>
                               )}
-                              <div className={`w-full h-8 flex items-center justify-center text-[10px] font-bold border-r border-b border-slate-100 ${isWorking ? shiftData?.color || 'bg-blue-100 text-blue-800' : 'bg-white text-slate-200'}`}>
+                              {(() => { const sp = isWorking && shiftData ? getShiftProps(shiftData) : null; return (
+                              <div className={`w-full h-8 flex items-center justify-center text-[10px] font-bold border-r border-b border-slate-100 ${isWorking ? (sp?.cls || 'bg-blue-100 text-blue-800') : 'bg-white text-slate-200'}`}
+                                style={isWorking ? (sp?.style || {}) : {}}>
                                 {isWorking ? activeShift : ''}
                               </div>
+                              ); })()}
                             </div>
                           );
                       })}
@@ -1232,6 +1494,111 @@ const Workspace = ({
           </div>
           );
       })()}
+
+      {/* ── MODAL SYNC ────────────────────────────────────────────────────── */}
+      {showSyncModal && (
+        <div className="fixed inset-0 z-[3000] flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full md:max-w-sm rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-slate-800 text-white px-5 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-base">Sincronización</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Comparte el cuadrante entre dispositivos</p>
+              </div>
+              <button onClick={() => setShowSyncModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              {/* Código */}
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Código del proyecto</p>
+                <div className="flex gap-2">
+                  <input
+                    value={syncCodeInput}
+                    onChange={e => setSyncCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6))}
+                    placeholder="ABC123"
+                    className="flex-1 border border-slate-300 rounded-lg px-3 py-2 font-mono font-bold text-lg text-center tracking-widest text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                  />
+                  <button
+                    onClick={() => { const c = generateSyncCode(); setSyncCodeInput(c); setSyncCode(c); }}
+                    className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-200 border border-slate-200 whitespace-nowrap"
+                    title="Generar código nuevo"
+                  >Nuevo</button>
+                  {syncCodeInput.length === 6 && syncCodeInput !== syncCode && (
+                    <button
+                      onClick={() => { setSyncCode(syncCodeInput); checkSyncStatus(syncCodeInput); }}
+                      className="px-3 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-700"
+                    >Usar</button>
+                  )}
+                </div>
+                {!syncCode && <p className="text-[10px] text-slate-400 mt-1.5">Genera un código nuevo o introduce uno existente para sincronizar</p>}
+              </div>
+
+              {/* QR + estado */}
+              {syncCode && (
+                <div className="flex gap-4 items-start">
+                  {syncQrUrl
+                    ? <img src={syncQrUrl} alt="QR sync" className="w-24 h-24 rounded-lg border border-slate-200 shrink-0" />
+                    : <div className="w-24 h-24 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center shrink-0"><QrCode className="w-8 h-8 text-slate-300"/></div>
+                  }
+                  <div className="min-w-0 space-y-1.5">
+                    <p className="text-xs font-bold text-slate-700">Código: <span className="font-mono tracking-widest">{syncCode}</span></p>
+                    <p className="text-[11px] text-slate-400 leading-snug">Escanea el QR con el móvil o introduce el código manualmente en el otro dispositivo</p>
+                    {syncLastAt && <p className="text-[10px] text-slate-400">Última sync: <span className="text-slate-600 font-medium">{timeAgo(syncLastAt)}</span></p>}
+                    {serverNewerThanLocal && (
+                      <p className="text-[10px] text-amber-600 font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"/>
+                        El servidor tiene cambios más recientes
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Estado de la operación */}
+              {syncStatus !== 'idle' && (
+                <div className={`rounded-lg px-4 py-3 text-sm font-medium flex items-center gap-2 ${
+                  syncStatus === 'pushing' || syncStatus === 'pulling' ? 'bg-slate-100 text-slate-600' :
+                  syncStatus === 'success-push' || syncStatus === 'success-pull' ? 'bg-green-50 text-green-700 border border-green-200' :
+                  'bg-red-50 text-red-700 border border-red-200'
+                }`}>
+                  {(syncStatus === 'pushing' || syncStatus === 'pulling') && <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin shrink-0"/>}
+                  {(syncStatus === 'success-push' || syncStatus === 'success-pull') && <Check className="w-4 h-4 shrink-0"/>}
+                  {syncStatus === 'error' && <AlertTriangle className="w-4 h-4 shrink-0"/>}
+                  <span>{
+                    syncStatus === 'pushing' ? 'Subiendo datos al servidor…' :
+                    syncStatus === 'pulling' ? 'Descargando datos del servidor…' :
+                    syncMessage
+                  }</span>
+                </div>
+              )}
+
+              {/* Acciones */}
+              {syncCode && (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={handleSyncPush}
+                    disabled={syncStatus === 'pushing' || syncStatus === 'pulling'}
+                    className="flex items-center justify-center gap-2 py-3 bg-slate-800 text-white rounded-xl font-bold text-sm hover:bg-slate-700 disabled:opacity-40"
+                  >
+                    <UploadCloud className="w-4 h-4"/>Subir
+                  </button>
+                  <button
+                    onClick={handleSyncPull}
+                    disabled={syncStatus === 'pushing' || syncStatus === 'pulling'}
+                    className={`flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm disabled:opacity-40 ${serverNewerThanLocal ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                  >
+                    <DownloadCloud className="w-4 h-4"/>Bajar
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-100">
+              <button onClick={() => setShowSyncModal(false)} className="w-full py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast de exportación */}
       {(isExporting || exportDone) && (

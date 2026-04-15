@@ -1,10 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { syncMiddleware } from './sync-api.js'
 
 export default defineConfig({
   plugins: [
     react(),
+    {
+      name: 'sync-api',
+      configureServer(server) {
+        server.middlewares.use(syncMiddleware);
+      },
+    },
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',

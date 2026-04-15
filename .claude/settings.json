@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:discourse.cubecoders.com)",
+      "Bash(cp sync-api.js deploy/sync-api.js)",
+      "Bash(cp vite.config.js deploy/vite.config.js)",
+      "Bash(cp package.json deploy/package.json)",
+      "Bash(node -e \"const l = require\\('./node_modules/lucide-react/dist/lucide-react.js'\\); const keys = Object.keys\\(l\\); console.log\\(keys.filter\\(k => /cloud|upload|down/i.test\\(k\\)\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(cp src/App.jsx deploy/src/App.jsx)"
+    ]
+  }
+}

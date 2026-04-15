@@ -21,7 +21,20 @@ cp vite.config.js   deploy/vite.config.js
 cp tailwind.config.js deploy/tailwind.config.js
 cp postcss.config.js  deploy/postcss.config.js
 cp index.js         deploy/index.js
+cp sync-api.js      deploy/sync-api.js
 ```
 
 The user uses WinSCP to sync deploy/ → AMP instance root (/).
 Never skip this step after making code changes.
+
+## Sync API — .env en el servidor
+El fichero `.env` NO se copia con el script anterior (está en .gitignore).
+Debe existir manualmente en el servidor AMP con las credenciales de MariaDB:
+```
+DB_HOST=127.0.0.1
+DB_PORT=3307
+DB_USER=...
+DB_PASS=...
+DB_NAME=shifter_sync
+```
+Ver `.env.example` como plantilla.
