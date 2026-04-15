@@ -1,69 +1,100 @@
 # Sentinel Shift 🛡️
 
-**Sentinel Shift** es un gestor de cuadrantes y turnos de seguridad diseñado para optimizar la planificación de personal. Es una aplicación web moderna, rápida y con soporte PWA (Progressive Web App) para funcionar sin conexión.
+**Sentinel Shift** es un gestor de cuadrantes y turnos de seguridad diseñado para optimizar la planificación de personal en servicios 24/7. Es una PWA (Progressive Web App) rápida, instalable y con soporte offline.
 
 🌐 **Demo en vivo**: [turnos.dking.es](https://turnos.dking.es)
 
-## 🚀 Tecnologías Utilizadas
+## 🚀 Tecnologías
 
--   **Framework**: [React 18](https://react.dev/)
--   **Herramienta de Construcción**: [Vite](https://vitejs.dev/)
--   **Estilos**: [TailwindCSS](https://tailwindcss.com/)
--   **Iconos**: [Lucide React](https://lucide.dev/)
--   **Soporte PWA**: [Vite PWA](https://vite-pwa-org.netlify.app/)
--   **Exportación**: [html2canvas](https://html2canvas.hertzen.com/) & [jsPDF](https://github.com/parallax/jsPDF)
+| Área | Tecnología |
+|---|---|
+| Framework | React 18 + Vite |
+| Estilos | TailwindCSS + Lucide React |
+| PWA | vite-plugin-pwa |
+| Exportación | html2canvas · jsPDF |
+| Sync backend | Node.js · mysql2 · MariaDB |
+| QR | qrcode |
 
-## ✨ Características Principales
+## ✨ Características
 
--   **Gestión de Personal**: Alta, edición y baja de empleados con roles específicos (ej. VS).
--   **Cuadrante Dinámico**: Visualización mensual con días, fines de semana y festivos destacados.
--   **Modos de Turno**: Soporte para jornadas de 8 Horas (`8H`) y 12 Horas (`12H`).
--   **Turnos Personalizados**: Creación de turnos a medida con cálculo de nocturnidad y colores personalizados.
--   **Cálculo Automático**:
-    -   Horas totales trabajadas.
-    -   Horas nocturnas.
-    -   Horas festivas.
--   **Control de Infracciones**: Alertas visuales en caso de descanso insuficiente entre turnos (menos de 12h).
--   **Multi-Selección**: Asignación de turnos en bloque para una planificación más rápida.
--   **Exportación Profesional**:
-    -   Descarga en formato **JPG** o **PDF**.
-    -   **Resumen para WhatsApp**: Copia un resumen de texto formateado con un clic.
--   **Soporte PWA**: Instálalo en tu dispositivo y úsalo sin conexión a internet.
+### Cuadrante
+- Visualización mensual con fines de semana y festivos destacados
+- Modos de jornada **8H** y **12H**
+- Multi-selección de celdas para asignación en bloque
+- Alertas de infracción de descanso (< 12h entre turnos)
+- Cálculo automático de horas totales, nocturnas y festivas
+- Gestión de personal: alta, edición y baja con rol configurable
+- Soporte multi-proyecto (varios servicios independientes)
 
-## 🛠️ Instalación y Uso Local
+### Turnos personalizados
+- Creación mediante hora de entrada y hora de salida (duración y nocturnidad calculadas automáticamente)
+- Preview en vivo antes de guardar
+- Color libre con selector nativo + paleta de acceso rápido
 
-Para ejecutar este proyecto en tu entorno local, asegúrate de tener [Node.js](https://nodejs.org/) instalado.
+### Plantillas de rotación
+- Presets rápidos: 4×2, 3×3, 5×2, 6×3, 2×2, 7×7
+- Ciclo personalizado (días trabajando / días libres)
+- Modo **Semana Larga · Semana Corta** (patrón específico de seguridad privada)
+- Offset de inicio ajustable con preview interactivo del mes completo
 
-1.  **Clonar el repositorio**:
-    ```bash
-    git clone https://github.com/Dkingsito/shifter
-    cd shifter
-    ```
+### Exportación
+- Descarga en **JPG** o **PDF**
+- Resumen automático para **WhatsApp** con un clic
 
-2.  **Instalar dependencias**:
-    ```bash
-    npm install
-    ```
+### Sincronización entre dispositivos
+- Código de sync de 6 caracteres por proyecto (sin cuentas)
+- QR generado en la app para pasar el código al móvil
+- Push / Pull bidireccional contra MariaDB
+- Indicador de cambios pendientes en el servidor
 
-3.  **Iniciar el servidor de desarrollo**:
-    ```bash
-    npm run dev
-    ```
-    El proyecto estará disponible en `http://localhost:3000` (o la IP local).
+### PWA
+- Instalable en escritorio y móvil
+- Funciona sin conexión a internet
 
-## 📂 Estructura del Proyecto
+## 🛠️ Instalación local
 
-```text
+Requiere [Node.js](https://nodejs.org/).
+
+```bash
+git clone https://github.com/Dkingsito/shifter
+cd shifter
+npm install
+npm run dev
+```
+
+La app estará disponible en `http://localhost:3000`.
+
+> La sincronización entre dispositivos requiere una instancia de MariaDB. Sin ella, la app funciona completamente en local (localStorage).
+
+## ☁️ Configuración del sync (opcional)
+
+Crea un fichero `.env` en la raíz (ver `.env.example`):
+
+```env
+DB_HOST=127.0.0.1
+DB_PORT=3307
+DB_USER=tu_usuario
+DB_PASS=tu_contraseña
+DB_NAME=shifter_sync
+```
+
+La base de datos y la tabla se crean automáticamente al primer uso.
+
+## 📂 Estructura del proyecto
+
+```
 shifter/
-├── public/                 # Archivos estáticos
 ├── src/
-│   ├── App.jsx             # Lógica y UI Principal (React)
-│   ├── index.css           # Estilos Globales (Tailwind)
-│   └── main.jsx            # Punto de Entrada
-├── index.html              # Plantilla HTML
-├── vite.config.js          # Configuración de Vite y PWA
-└── package.json            # Dependencias y Scripts
+│   ├── App.jsx         # Lógica y UI principal
+│   ├── index.css       # Estilos globales (Tailwind)
+│   └── main.jsx        # Punto de entrada
+├── sync-api.js         # Middleware de sync (MariaDB)
+├── index.js            # Entry point para AMP / Node.js
+├── vite.config.js      # Configuración de Vite, PWA y API middleware
+├── .env.example        # Plantilla de variables de entorno
+├── deploy/             # Copia lista para subir al servidor (WinSCP)
+└── package.json
 ```
 
 ---
-*Desarrollado con ❤️ para la gestión inteligente de personal.*
+*Desarrollado con ❤️ para la gestión inteligente de personal de seguridad.*
