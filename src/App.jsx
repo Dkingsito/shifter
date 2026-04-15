@@ -222,11 +222,13 @@ const Workspace = ({
 
   // Rotación de turnos
   const [showRotationModal, setShowRotationModal] = useState(false);
+  const [rotMode, setRotMode] = useState('cycle');
   const [rotDaysOn, setRotDaysOn] = useState(4);
   const [rotDaysOff, setRotDaysOff] = useState(2);
   const [rotShift, setRotShift] = useState('');
   const [rotOffset, setRotOffset] = useState(0);
   const [rotTargetStaff, setRotTargetStaff] = useState('all');
+  const [rotLcStart, setRotLcStart] = useState('larga');
   const [isMobile, setIsMobile] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedCells, setSelectedCells] = useState(new Set());
@@ -531,18 +533,46 @@ const Workspace = ({
   };
 
   const applyRotation = () => {
-      const cycle = rotDaysOn + rotDaysOff;
       const shiftCode = rotShift || Object.keys(shiftConfig[mode].types)[0];
       setFullSchedule(prev => {
           const newFull = { ...prev };
           const monthData = { ...(newFull[monthKey] || {}) };
           const targets = rotTargetStaff === 'all' ? staff : staff.filter(s => String(s.id) === String(rotTargetStaff));
-          targets.forEach(s => {
-              monthData[s.id] = Array.from({ length: daysInMonth }, (_, i) => {
-                  const pos = ((i - rotOffset) % cycle + cycle) % cycle;
-                  return pos < rotDaysOn ? shiftCode : 'L';
+
+          if (rotMode === 'cycle') {
+              const cycle = rotDaysOn + rotDaysOff;
+              targets.forEach(s => {
+                  monthData[s.id] = Array.from({ length: daysInMonth }, (_, i) => {
+                      const pos = ((i - rotOffset) % cycle + cycle) % cycle;
+                      return pos < rotDaysOn ? shiftCode : 'L';
+                  });
               });
-          });
+          } else {
+              // Semana larga (L): lunes, martes, viernes, sábado, domingo → JS getDay() 1,2,5,6,0
+              // Semana corta (C): miércoles, jueves → JS getDay() 3,4
+              const largaDays = new Set([0, 1, 2, 5, 6]);
+              const cortaDays = new Set([3, 4]);
+              // Determinar índice de semana de la primera semana del mes
+              const firstDay = new Date(year, month, 1);
+              const firstMon = new Date(firstDay);
+              firstMon.setDate(1 - ((firstDay.getDay() + 6) % 7));
+              const firstWeekIdx = Math.floor(firstMon.getTime() / (7 * 24 * 60 * 60 * 1000));
+              targets.forEach(s => {
+                  monthData[s.id] = Array.from({ length: daysInMonth }, (_, i) => {
+                      const d = new Date(year, month, i + 1);
+                      const wd = d.getDay();
+                      const mon = new Date(d);
+                      mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+                      const weekIdx = Math.floor(mon.getTime() / (7 * 24 * 60 * 60 * 1000));
+                      const weeksPassed = weekIdx - firstWeekIdx;
+                      const isEvenWeek = weeksPassed % 2 === 0;
+                      const isLarga = rotLcStart === 'larga' ? isEvenWeek : !isEvenWeek;
+                      if (isLarga) return largaDays.has(wd) ? shiftCode : 'L';
+                      return cortaDays.has(wd) ? shiftCode : 'L';
+                  });
+              });
+          }
+
           newFull[monthKey] = monthData;
           return newFull;
       });
@@ -1001,6 +1031,21 @@ const Workspace = ({
               { label: '5×2', on: 5, off: 2 }, { label: '6×3', on: 6, off: 3 },
               { label: '2×2', on: 2, off: 2 }, { label: '7×7', on: 7, off: 7 },
           ];
+          const largaDays = new Set([0, 1, 2, 5, 6]); // JS: 0=Dom,1=Lun,2=Mar,5=Vie,6=Sáb
+          const cortaDays = new Set([3, 4]); // 3=Mié,4=Jue
+          const DAY_LETTERS = ['D','L','M','X','J','V','S'];
+          const firstDay = new Date(year, month, 1);
+          const firstMon = new Date(firstDay);
+          firstMon.setDate(1 - ((firstDay.getDay() + 6) % 7));
+          const firstWeekIdx = Math.floor(firstMon.getTime() / (7 * 24 * 60 * 60 * 1000));
+          const getLcWeekType = (i) => {
+              const d = new Date(year, month, i + 1);
+              const mon = new Date(d);
+              mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+              const wIdx = Math.floor(mon.getTime() / (7 * 24 * 60 * 60 * 1000));
+              const isEven = (wIdx - firstWeekIdx) % 2 === 0;
+              return (rotLcStart === 'larga' ? isEven : !isEven) ? 'larga' : 'corta';
+          };
           return (
           <div className="fixed inset-0 z-[3000] flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="bg-white w-full md:max-w-lg rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
@@ -1014,38 +1059,81 @@ const Workspace = ({
               </div>
 
               <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
-                {/* Presets rápidos */}
-                <div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Presets rápidos</p>
-                  <div className="flex gap-2 flex-wrap">
-                    {presets.map(p => (
-                      <button key={p.label} onClick={() => { setRotDaysOn(p.on); setRotDaysOff(p.off); }}
-                        className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${rotDaysOn === p.on && rotDaysOff === p.off ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-500'}`}>
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
+                {/* Selector de modo */}
+                <div className="flex rounded-xl overflow-hidden border border-slate-200 text-sm font-bold">
+                  <button onClick={() => setRotMode('cycle')}
+                    className={`flex-1 py-2.5 transition-colors ${rotMode === 'cycle' ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                    Ciclo fijo
+                  </button>
+                  <button onClick={() => setRotMode('semana-lc')}
+                    className={`flex-1 py-2.5 transition-colors border-l border-slate-200 ${rotMode === 'semana-lc' ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                    Sem. Larga · Corta
+                  </button>
                 </div>
 
-                {/* Configuración manual */}
-                <div className="grid grid-cols-2 gap-3">
+                {rotMode === 'cycle' ? (<>
+                  {/* Presets rápidos */}
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Días trabajando</label>
-                    <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
-                      <button onClick={() => setRotDaysOn(d => Math.max(1, d - 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">−</button>
-                      <span className="flex-1 text-center font-bold text-slate-800 text-lg">{rotDaysOn}</span>
-                      <button onClick={() => setRotDaysOn(d => Math.min(28, d + 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">+</button>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Presets rápidos</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {presets.map(p => (
+                        <button key={p.label} onClick={() => { setRotDaysOn(p.on); setRotDaysOff(p.off); }}
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${rotDaysOn === p.on && rotDaysOff === p.off ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-500'}`}>
+                          {p.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Días libres</label>
-                    <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
-                      <button onClick={() => setRotDaysOff(d => Math.max(1, d - 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">−</button>
-                      <span className="flex-1 text-center font-bold text-slate-800 text-lg">{rotDaysOff}</span>
-                      <button onClick={() => setRotDaysOff(d => Math.min(28, d + 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">+</button>
+
+                  {/* Configuración manual */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Días trabajando</label>
+                      <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+                        <button onClick={() => setRotDaysOn(d => Math.max(1, d - 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">−</button>
+                        <span className="flex-1 text-center font-bold text-slate-800 text-lg">{rotDaysOn}</span>
+                        <button onClick={() => setRotDaysOn(d => Math.min(28, d + 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">+</button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Días libres</label>
+                      <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+                        <button onClick={() => setRotDaysOff(d => Math.max(1, d - 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">−</button>
+                        <span className="flex-1 text-center font-bold text-slate-800 text-lg">{rotDaysOff}</span>
+                        <button onClick={() => setRotDaysOff(d => Math.min(28, d + 1))} className="w-8 h-8 rounded-md bg-white shadow text-slate-700 font-bold text-lg hover:bg-slate-50">+</button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </>) : (<>
+                  {/* Info semana larga/corta */}
+                  <div className="bg-slate-50 rounded-xl p-4 space-y-2 border border-slate-200">
+                    <div className="flex items-start gap-3">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider w-20 shrink-0 mt-0.5">Sem. Larga</span>
+                      <span className="text-xs text-slate-700 font-medium">Lun · Mar · Vie · Sáb · Dom</span>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider w-20 shrink-0 mt-0.5">Sem. Corta</span>
+                      <span className="text-xs text-slate-700 font-medium">Mié · Jue</span>
+                    </div>
+                  </div>
+
+                  {/* Qué semana empieza el mes */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      Primera semana del mes es…
+                    </p>
+                    <div className="flex rounded-xl overflow-hidden border border-slate-200 text-sm font-bold">
+                      <button onClick={() => setRotLcStart('larga')}
+                        className={`flex-1 py-2 transition-colors ${rotLcStart === 'larga' ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                        Larga
+                      </button>
+                      <button onClick={() => setRotLcStart('corta')}
+                        className={`flex-1 py-2 transition-colors border-l border-slate-200 ${rotLcStart === 'corta' ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                        Corta
+                      </button>
+                    </div>
+                  </div>
+                </>)}
 
                 {/* Turno a asignar */}
                 <div>
@@ -1070,38 +1158,55 @@ const Workspace = ({
                   </select>
                 </div>
 
-                {/* Offset — ajuste de inicio */}
+                {/* Preview + controles de ajuste (solo en modo cycle) */}
                 <div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                    Ajustar inicio del ciclo
-                    <span className="normal-case text-slate-400 font-normal ml-1">(desplaza el patrón día a día)</span>
-                  </p>
-                  <div className="flex items-center gap-3 mb-3">
-                    <button onClick={() => setRotOffset(o => o - 1)} className="w-10 h-10 rounded-xl bg-slate-800 text-white font-bold text-xl hover:bg-slate-700 flex items-center justify-center">‹</button>
-                    <div className="flex-1 text-center">
-                      <span className="text-2xl font-bold text-slate-800">{rotOffset >= 0 ? `+${rotOffset}` : rotOffset}</span>
-                      <span className="text-xs text-slate-400 ml-1">días</span>
-                    </div>
-                    <button onClick={() => setRotOffset(o => o + 1)} className="w-10 h-10 rounded-xl bg-slate-800 text-white font-bold text-xl hover:bg-slate-700 flex items-center justify-center">›</button>
-                    <button onClick={() => setRotOffset(0)} className="px-3 py-2 rounded-lg bg-slate-100 text-slate-500 text-xs font-bold hover:bg-slate-200">Reset</button>
-                  </div>
+                  {rotMode === 'cycle' && (
+                    <>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Ajustar inicio del ciclo
+                        <span className="normal-case text-slate-400 font-normal ml-1">(desplaza el patrón día a día)</span>
+                      </p>
+                      <div className="flex items-center gap-3 mb-3">
+                        <button onClick={() => setRotOffset(o => o - 1)} className="w-10 h-10 rounded-xl bg-slate-800 text-white font-bold text-xl hover:bg-slate-700 flex items-center justify-center">‹</button>
+                        <div className="flex-1 text-center">
+                          <span className="text-2xl font-bold text-slate-800">{rotOffset >= 0 ? `+${rotOffset}` : rotOffset}</span>
+                          <span className="text-xs text-slate-400 ml-1">días</span>
+                        </div>
+                        <button onClick={() => setRotOffset(o => o + 1)} className="w-10 h-10 rounded-xl bg-slate-800 text-white font-bold text-xl hover:bg-slate-700 flex items-center justify-center">›</button>
+                        <button onClick={() => setRotOffset(0)} className="px-3 py-2 rounded-lg bg-slate-100 text-slate-500 text-xs font-bold hover:bg-slate-200">Reset</button>
+                      </div>
+                    </>
+                  )}
 
                   {/* Preview interactivo — scroll horizontal */}
                   <p className="text-[10px] text-slate-400 mb-1.5">Vista previa del mes ({MONTH_NAMES[month]})</p>
                   <div className="overflow-x-auto rounded-lg border border-slate-200">
                     <div className="flex min-w-max">
-                      {/* Números de día */}
                       {Array.from({ length: daysInMonth }, (_, i) => {
-                          const pos = ((i - rotOffset) % cycle + cycle) % cycle;
-                          const isWorking = pos < rotDaysOn;
                           const shiftData = allShifts[activeShift];
                           const wknd = isWeekend(i);
                           const holiday = isHoliday(i);
+                          const wd = new Date(year, month, i + 1).getDay();
+                          let isWorking;
+                          let weekLabel = null;
+                          if (rotMode === 'cycle') {
+                              const pos = ((i - rotOffset) % cycle + cycle) % cycle;
+                              isWorking = pos < rotDaysOn;
+                          } else {
+                              const wType = getLcWeekType(i);
+                              isWorking = wType === 'larga' ? largaDays.has(wd) : cortaDays.has(wd);
+                              weekLabel = wType === 'larga' ? 'L' : 'C';
+                          }
                           return (
                             <div key={i} className="flex flex-col items-center w-9 shrink-0">
                               <div className={`w-full h-6 flex items-center justify-center text-[9px] font-bold border-r border-b ${holiday ? 'bg-red-700 text-white' : wknd ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
                                 {i + 1}
                               </div>
+                              {rotMode === 'semana-lc' && (
+                                <div className={`w-full h-4 flex items-center justify-center text-[8px] font-bold border-r border-b border-slate-100 ${weekLabel === 'L' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>
+                                  {DAY_LETTERS[wd]}
+                                </div>
+                              )}
                               <div className={`w-full h-8 flex items-center justify-center text-[10px] font-bold border-r border-b border-slate-100 ${isWorking ? shiftData?.color || 'bg-blue-100 text-blue-800' : 'bg-white text-slate-200'}`}>
                                 {isWorking ? activeShift : ''}
                               </div>
@@ -1110,7 +1215,9 @@ const Workspace = ({
                       })}
                     </div>
                   </div>
-                  <p className="text-[9px] text-slate-400 mt-1">Desliza para ver el mes completo · Usa ‹ › para ajustar</p>
+                  <p className="text-[9px] text-slate-400 mt-1">
+                    {rotMode === 'cycle' ? 'Desliza para ver el mes completo · Usa ‹ › para ajustar' : 'Desliza para ver el mes completo · Amarillo = sem. larga · Azul = sem. corta'}
+                  </p>
                 </div>
               </div>
 
