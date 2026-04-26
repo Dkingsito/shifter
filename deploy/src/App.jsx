@@ -201,6 +201,10 @@ const Workspace = ({
   const [fullSchedule, setFullSchedule] = useState(() => loadState(K('full_schedule'), {}));
   const [customHolidays, setCustomHolidays] = useState(() => loadState(K('holidays'), {}));
   const [customShifts, setCustomShifts] = useState(() => loadState(K('custom_shifts'), {}));
+  const [serviceHours, setServiceHours] = useState(() => loadState(K('service_hours'), {
+    enabled: false, start: '08:00', end: '20:00', breaks: []
+  }));
+  const [showServiceModal, setShowServiceModal] = useState(false);
 
   // Estados UI
   const [activeCell, setActiveCell] = useState(null);
@@ -277,6 +281,7 @@ const Workspace = ({
   useEffect(() => localStorage.setItem(K('full_schedule'), JSON.stringify(fullSchedule)), [fullSchedule, projectId]);
   useEffect(() => localStorage.setItem(K('holidays'), JSON.stringify(customHolidays)), [customHolidays, projectId]);
   useEffect(() => localStorage.setItem(K('custom_shifts'), JSON.stringify(customShifts)), [customShifts, projectId]);
+  useEffect(() => localStorage.setItem(K('service_hours'), JSON.stringify(serviceHours)), [serviceHours, projectId]);
 
   // Sync — persistencia código y última sync
   useEffect(() => { if (syncCode) localStorage.setItem(`sentinel_sync_${projectId}`, syncCode); }, [syncCode, projectId]);
@@ -375,6 +380,7 @@ const Workspace = ({
 
   const isWeekend = (d) => [0, 6].includes(new Date(year, month, d + 1).getDay());
   const isSunday = (d) => new Date(year, month, d + 1).getDay() === 0;
+  const isMonday = (d) => new Date(year, month, d + 1).getDay() === 1;
   const isHoliday = (d) => customHolidays[`${year}-${month}-${d + 1}`] || FIXED_HOLIDAYS.includes(`${d + 1}/${month}`);
   
   const toggleHoliday = (d) => {
@@ -500,25 +506,53 @@ const Workspace = ({
   };
 
   const dailyCoverageStatus = useMemo(() => {
-    const status = [];
-    const requiredSlots = shiftConfig[mode].slots;
     const currentTypes = shiftConfig[mode].types;
-    for (let day = 0; day < daysInMonth; day++) {
-      const shiftsPresentToday = new Set();
-      let hoursCovered = 0;
-      staff.forEach(s => {
-        const shiftCode = currentSchedule[s.id]?.[day];
-        if (currentTypes[shiftCode] || customShifts[shiftCode]) {
-          shiftsPresentToday.add(shiftCode);
-          const h = currentTypes[shiftCode]?.hours || customShifts[shiftCode]?.hours || 0;
-          hoursCovered += h;
-        }
+
+    if (!serviceHours.enabled) {
+      // Modo 24h: comportamiento original (verificar slots requeridos)
+      const requiredSlots = shiftConfig[mode].slots;
+      return Array.from({ length: daysInMonth }, (_, day) => {
+        const present = new Set();
+        staff.forEach(s => {
+          const c = currentSchedule[s.id]?.[day];
+          if (currentTypes[c] || customShifts[c]) present.add(c);
+        });
+        const missing = requiredSlots.filter(s => !present.has(s));
+        return { isComplete: missing.length === 0, missing };
       });
-      const missingSlots = requiredSlots.filter(slot => !shiftsPresentToday.has(slot));
-      status.push({ isComplete: missingSlots.length === 0, hoursCovered, missing: missingSlots });
     }
-    return status;
-  }, [currentSchedule, staff, mode, shiftConfig, daysInMonth, customShifts]);
+
+    // Modo horario parcial: verificar cobertura de la ventana del servicio
+    // Granularidad 30 min → 48 slots por día (0 = 00:00, 47 = 23:30)
+    const toSlot = (time) => {
+      const [h, m] = time.split(':').map(Number);
+      return h * 2 + (m >= 30 ? 1 : 0);
+    };
+    const svcStart = toSlot(serviceHours.start);
+    const svcEnd   = toSlot(serviceHours.end);
+
+    // Slots requeridos = ventana del servicio menos los descansos
+    const required = new Set();
+    for (let s = svcStart; s < svcEnd; s++) required.add(s);
+    (serviceHours.breaks || []).forEach(br => {
+      const bs = toSlot(br.start), be = toSlot(br.end);
+      for (let s = bs; s < be; s++) required.delete(s);
+    });
+
+    return Array.from({ length: daysInMonth }, (_, day) => {
+      const covered = new Set();
+      staff.forEach(emp => {
+        const code = currentSchedule[emp.id]?.[day];
+        const data = currentTypes[code] || customShifts[code];
+        if (!data) return;
+        const shiftStart = toSlot(data.startTime || decimalToTime(data.start ?? 0));
+        const shiftEnd   = shiftStart + Math.round(data.hours * 2);
+        for (let s = shiftStart; s < shiftEnd; s++) covered.add(s % 48);
+      });
+      const missing = [...required].filter(s => !covered.has(s));
+      return { isComplete: missing.length === 0, missing };
+    });
+  }, [currentSchedule, staff, mode, shiftConfig, daysInMonth, customShifts, serviceHours]);
 
   const saveCustomShift = () => {
       if (!newShiftCode || !newShiftDesc || !newShiftStart || !newShiftEnd) return;
@@ -766,7 +800,16 @@ const Workspace = ({
              {/* 2. BOTÓN ALTA VS (CENTRO/EXPANDIDO) */}
              <button onClick={() => { setInputMode('add'); setInputName(''); setInputRole('VS'); setShowInputModal(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 text-xs bg-blue-600 text-white rounded shadow hover:bg-blue-700 font-bold md:ml-auto order-2 md:order-3"><UserPlus className="w-4 h-4" /> <span className="hidden md:inline">Alta Personal</span><span className="md:hidden">Alta</span></button>
 
-             {/* 3. BOTÓN SYNC (MÓVIL) */}
+             {/* 3a. BOTÓN ROTACIÓN (MÓVIL) */}
+             <button
+               onClick={() => { setRotOffset(0); setRotShift(Object.keys(shiftConfig[mode].types)[0]); setShowRotationModal(true); }}
+               className="md:hidden p-2 border rounded bg-white text-slate-600 border-slate-200"
+               title="Plantilla de rotación"
+             >
+               <Calendar className="w-5 h-5" />
+             </button>
+
+             {/* 3b. BOTÓN SYNC (MÓVIL) */}
              <button
                onClick={openSyncModal}
                className={`md:hidden relative p-2 border rounded transition-colors ${serverNewerThanLocal ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200'}`}
@@ -787,6 +830,7 @@ const Workspace = ({
                       <button onClick={() => { generateWhatsAppSummary(); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-green-700 font-medium"><Share2 className="w-4 h-4" /> Copiar resumen WhatsApp</button>
                       <button onClick={() => { setShowShiftModal(true); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-slate-700"><PlusCircle className="w-4 h-4 text-purple-600" /> Crear turno personalizado</button>
                       <button onClick={() => { setRotOffset(0); setRotShift(Object.keys(shiftConfig[mode].types)[0]); setShowRotationModal(true); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-slate-700"><Calendar className="w-4 h-4 text-slate-600" /> Plantilla de rotación</button>
+                      <button onClick={() => { setShowServiceModal(true); setShowMobileMenu(false); }} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-slate-700"><Clock className="w-4 h-4 text-slate-500" /> Horario del servicio{serviceHours.enabled && <span className="ml-auto text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">{serviceHours.start}–{serviceHours.end}</span>}</button>
                       <div className="p-2 bg-slate-50 border-b border-t text-[10px] font-bold text-slate-500 uppercase tracking-wider">Guardar cuadrante</div>
                       <button onClick={() => { handleExportClick('jpg'); }} disabled={isExporting} className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-50 text-slate-700 disabled:opacity-50">
                          {isExporting ? <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin inline-block" /> : <ImageIcon className="w-4 h-4" />} Guardar como JPG
@@ -858,6 +902,7 @@ const Workspace = ({
                                 <div className="p-2 bg-slate-50 border-b text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cuadrante</div>
                                 <button onClick={() => { generateWhatsAppSummary(); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-slate-50 text-slate-700 text-sm border-b border-slate-100"><Share2 className="w-4 h-4 text-green-600" /> Copiar resumen WhatsApp</button>
                                 <button onClick={() => setShowShiftModal(true) || setShowDesktopMenu(false)} className="w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-slate-50 text-slate-700 text-sm border-b border-slate-100"><PlusCircle className="w-4 h-4 text-purple-600" /> Crear turno personalizado</button>
+                                <button onClick={() => { setShowServiceModal(true); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-slate-50 text-slate-700 text-sm border-b border-slate-100"><Clock className="w-4 h-4 text-slate-500" /> Horario del servicio{serviceHours.enabled && <span className="ml-auto text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">{serviceHours.start}–{serviceHours.end}</span>}</button>
                                 <div className="p-2 bg-slate-50 border-b border-t text-[10px] font-bold text-slate-500 uppercase tracking-wider">Copia de seguridad</div>
                                 <button onClick={() => { onExportData(); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-blue-50 text-blue-700 text-sm border-b border-slate-100"><UploadCloud className="w-4 h-4" /> Hacer backup (.json)</button>
                                 <button onClick={() => { onImportData(); setShowDesktopMenu(false); }} className="w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-blue-50 text-blue-700 text-sm border-b border-slate-100"><DownloadCloud className="w-4 h-4" /> Restaurar backup</button>
@@ -884,10 +929,15 @@ const Workspace = ({
       </div>
 
       <div className="bg-white px-4 py-2 flex justify-between items-center border-b-2 border-slate-100 shadow-sm">
-         <div className="flex items-center gap-1 bg-slate-800 rounded-lg overflow-hidden shadow">
-            <button onClick={() => changeMonth(-1)} className="px-3 py-1.5 font-bold text-slate-300 hover:bg-slate-700 transition-colors">&lt;</button>
-            <span className="px-3 py-1.5 text-sm font-bold text-white w-36 text-center tracking-wide">{MONTH_NAMES[month]} {year}</span>
-            <button onClick={() => changeMonth(1)} className="px-3 py-1.5 font-bold text-slate-300 hover:bg-slate-700 transition-colors">&gt;</button>
+         <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-800 rounded-lg overflow-hidden shadow">
+               <button onClick={() => changeMonth(-1)} className="px-3 py-1.5 font-bold text-slate-300 hover:bg-slate-700 transition-colors">&lt;</button>
+               <span className="px-3 py-1.5 text-sm font-bold text-white w-36 text-center tracking-wide">{MONTH_NAMES[month]} {year}</span>
+               <button onClick={() => changeMonth(1)} className="px-3 py-1.5 font-bold text-slate-300 hover:bg-slate-700 transition-colors">&gt;</button>
+            </div>
+            {(month !== new Date().getMonth() || year !== new Date().getFullYear()) && (
+               <button onClick={() => { setCurrentDate(new Date()); setActiveCell(null); setIsSelectionMode(false); setSelectedCells(new Set()); setLastSelectedCell(null); }} className="px-2.5 py-1.5 text-xs font-bold bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 transition-colors" title="Ir al mes actual">Hoy</button>
+            )}
          </div>
          <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5">
@@ -920,7 +970,7 @@ const Workspace = ({
                 </div>
                 {Array.from({ length: daysInMonth }).map((_, i) => (
                     <div key={i} onClick={() => toggleHoliday(i)}
-                        className={`${isExporting ? 'day-cell text-[10px] font-bold' : 'w-9 shrink-0 flex items-center justify-center border-r border-slate-700 cursor-pointer transition-colors'}
+                        className={`${isExporting ? 'day-cell text-[10px] font-bold' : `w-9 shrink-0 flex items-center justify-center border-r border-slate-700 cursor-pointer transition-colors${isMonday(i) && i > 0 ? ' border-l-2 border-l-slate-500' : ''}`}
                         ${isExporting
                             ? (isHoliday(i) ? 'bg-red-100 text-red-700' : (isWeekend(i) ? 'bg-slate-300 text-slate-700' : 'bg-slate-100 text-slate-400'))
                             : (isHoliday(i) ? 'bg-red-700 text-red-100 hover:bg-red-600' : (isWeekend(i) ? 'bg-slate-600 text-slate-300 hover:bg-slate-500' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'))
@@ -965,9 +1015,10 @@ const Workspace = ({
                             const shiftSp = isValid ? getShiftProps(data) : null;
                             const colorCls = shiftSp?.cls || '';
                             const colorStyle = (borderClass === '' && shiftSp?.style) ? shiftSp.style : {};
+                            const mondaySep = !isExporting && isMonday(d) && d > 0 ? 'border-l-2 border-l-slate-300' : '';
                             const baseClass = isExporting
                                 ? `day-cell text-[10px] font-bold ${isValid ? colorCls : (holiday ? 'bg-red-100 text-red-700' : (wknd ? 'bg-slate-300' : ''))}`
-                                : `w-9 shrink-0 flex items-center justify-center border-r border-slate-100 text-[10px] md:text-xs font-bold transition-all relative ${holiday && !isValid ? 'bg-red-100 text-red-700' : ''} ${wknd && !isValid && !holiday ? 'bg-slate-300 text-slate-700' : ''} ${isValid ? colorCls : (data ? '' : 'bg-slate-50 text-slate-300 line-through')} active:scale-95 ${borderClass} ${violationClass}`;
+                                : `w-9 shrink-0 flex items-center justify-center border-r border-slate-100 text-[10px] md:text-xs font-bold transition-all relative ${holiday && !isValid ? 'bg-red-100 text-red-700' : ''} ${wknd && !isValid && !holiday ? 'bg-slate-300 text-slate-700' : ''} ${isValid ? colorCls : (data ? '' : 'bg-slate-50 text-slate-300 line-through')} active:scale-95 ${borderClass} ${violationClass} ${mondaySep}`;
 
                             return (
                                 <button
@@ -1009,6 +1060,16 @@ const Workspace = ({
                     </div>
                 );
             })}
+
+            {!isExporting && staff.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16 gap-4 text-slate-400">
+                <UserPlus className="w-12 h-12 opacity-30" />
+                <div className="text-center">
+                  <p className="font-bold text-slate-600">Sin personal asignado</p>
+                  <p className="text-sm mt-1">Pulsa <span className="font-bold text-blue-600">Alta</span> para añadir a alguien al cuadrante</p>
+                </div>
+              </div>
+            )}
 
             {!isExporting && (
             <div className="flex border-t border-slate-200 bg-slate-800 h-7">
@@ -1512,6 +1573,112 @@ const Workspace = ({
             </div>
           </div>
           );
+      })()}
+
+      {/* ── MODAL HORARIO DE SERVICIO ─────────────────────────────────────── */}
+      {showServiceModal && (() => {
+        const addBreak = () => setServiceHours(p => ({ ...p, breaks: [...(p.breaks||[]), { start: '13:00', end: '14:00' }] }));
+        const removeBreak = (i) => setServiceHours(p => ({ ...p, breaks: p.breaks.filter((_, j) => j !== i) }));
+        const updateBreak = (i, field, val) => setServiceHours(p => ({ ...p, breaks: p.breaks.map((b, j) => j === i ? { ...b, [field]: val } : b) }));
+        const fmtWindow = () => {
+          if (!serviceHours.enabled) return '24h';
+          let s = `${serviceHours.start}–${serviceHours.end}`;
+          if (serviceHours.breaks?.length) s += ` (${serviceHours.breaks.length} descanso${serviceHours.breaks.length > 1 ? 's' : ''})`;
+          return s;
+        };
+        return (
+        <div className="fixed inset-0 z-[3000] flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full md:max-w-md rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-slate-800 text-white px-5 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-base">Horario del servicio</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Define la ventana de cobertura del servicio</p>
+              </div>
+              <button onClick={() => setShowServiceModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+            </div>
+
+            <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
+              {/* Toggle 24h / parcial */}
+              <div className="flex rounded-xl overflow-hidden border border-slate-200 text-sm font-bold">
+                <button onClick={() => setServiceHours(p => ({ ...p, enabled: false }))}
+                  className={`flex-1 py-2.5 transition-colors ${!serviceHours.enabled ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                  Servicio 24h
+                </button>
+                <button onClick={() => setServiceHours(p => ({ ...p, enabled: true }))}
+                  className={`flex-1 py-2.5 transition-colors border-l border-slate-200 ${serviceHours.enabled ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                  Horario parcial
+                </button>
+              </div>
+
+              {serviceHours.enabled && (<>
+                {/* Ventana principal */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Ventana del servicio</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[10px] text-slate-400 mb-1">Inicio</p>
+                      <input type="time" value={serviceHours.start}
+                        onChange={e => setServiceHours(p => ({ ...p, start: e.target.value }))}
+                        className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 mb-1">Fin</p>
+                      <input type="time" value={serviceHours.end}
+                        onChange={e => setServiceHours(p => ({ ...p, end: e.target.value }))}
+                        className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Descansos */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Descansos / pausas</p>
+                    <button onClick={addBreak} className="text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-lg border border-slate-200">+ Añadir</button>
+                  </div>
+                  {(!serviceHours.breaks || serviceHours.breaks.length === 0) && (
+                    <p className="text-xs text-slate-400 italic">Sin descansos — el servicio corre sin interrupción</p>
+                  )}
+                  <div className="space-y-2">
+                    {(serviceHours.breaks || []).map((br, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-slate-50 rounded-lg p-2 border border-slate-200">
+                        <span className="text-[10px] font-bold text-slate-400 w-16 shrink-0">Descanso {i + 1}</span>
+                        <input type="time" value={br.start} onChange={e => updateBreak(i, 'start', e.target.value)}
+                          className="flex-1 p-1.5 border border-slate-300 rounded text-xs font-mono bg-white focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <span className="text-slate-400 text-xs">→</span>
+                        <input type="time" value={br.end} onChange={e => updateBreak(i, 'end', e.target.value)}
+                          className="flex-1 p-1.5 border border-slate-300 rounded text-xs font-mono bg-white focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <button onClick={() => removeBreak(i)} className="text-red-400 hover:text-red-600 shrink-0"><X className="w-4 h-4"/></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Preview */}
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Cobertura requerida</p>
+                  <p className="text-sm font-bold text-slate-800">{fmtWindow()}</p>
+                  <p className="text-xs text-slate-400 mt-1">El indicador ✓/! del cuadrante verificará esta ventana horaria</p>
+                </div>
+              </>)}
+
+              {!serviceHours.enabled && (
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                  <p className="text-sm font-bold text-slate-800">Cobertura 24h</p>
+                  <p className="text-xs text-slate-400 mt-1">Se verificará que todos los turnos del sistema estén cubiertos cada día</p>
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-100">
+              <button onClick={() => setShowServiceModal(false)}
+                className="w-full py-2.5 bg-slate-800 text-white rounded-xl font-bold text-sm hover:bg-slate-700">
+                Guardar configuración
+              </button>
+            </div>
+          </div>
+        </div>
+        );
       })()}
 
       {/* ── MODAL SYNC ────────────────────────────────────────────────────── */}
