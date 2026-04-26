@@ -2112,7 +2112,7 @@ const SentinelProjectManager = () => {
             )}
           </div>
         </div>
-        <div className="text-xs text-slate-500 hidden md:block font-mono bg-slate-800 px-2 py-1 rounded">v5.8 Pro</div>
+        <div className="text-xs text-slate-500 hidden md:block font-mono bg-slate-800 px-2 py-1 rounded">v6.0 Pro</div>
       </div>
 
       <Workspace 
