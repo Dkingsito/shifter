@@ -8,7 +8,7 @@ import {
   User, Check, Moon, Gift, Briefcase, MousePointer2, CheckSquare,
   PlusCircle, FolderPlus, FolderOpen, ChevronDown, MoreVertical,
   Thermometer, Share2, Clock, AlertCircle, Download, HelpCircle,
-  UploadCloud, DownloadCloud, RefreshCw, QrCode
+  UploadCloud, DownloadCloud, RefreshCw, QrCode, Layers
 } from 'lucide-react';
 
 // --- CONSTANTES ---
@@ -231,6 +231,9 @@ const Workspace = ({
   const [newShiftStart, setNewShiftStart] = useState('');
   const [newShiftEnd, setNewShiftEnd] = useState('');
   const [newShiftColorHex, setNewShiftColorHex] = useState('#6366f1');
+  const [newShiftSplit, setNewShiftSplit] = useState(false);
+  const [newShiftStart2, setNewShiftStart2] = useState('');
+  const [newShiftEnd2, setNewShiftEnd2] = useState('');
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
@@ -558,8 +561,20 @@ const Workspace = ({
       if (!newShiftCode || !newShiftDesc || !newShiftStart || !newShiftEnd) return;
       const startDec = timeToDecimal(newShiftStart);
       const endDec = timeToDecimal(newShiftEnd);
-      const hours = ((endDec - startDec) + 24) % 24;
-      const nightHours = calculateNightHoursForShift(startDec, hours);
+      const hours1 = ((endDec - startDec) + 24) % 24;
+      const night1 = calculateNightHoursForShift(startDec, hours1);
+      let hours = hours1;
+      let nightHours = night1;
+      let splitData = null;
+      if (newShiftSplit && newShiftStart2 && newShiftEnd2) {
+          const start2Dec = timeToDecimal(newShiftStart2);
+          const end2Dec = timeToDecimal(newShiftEnd2);
+          const hours2 = ((end2Dec - start2Dec) + 24) % 24;
+          const night2 = calculateNightHoursForShift(start2Dec, hours2);
+          hours = parseFloat((hours1 + hours2).toFixed(2));
+          nightHours = parseFloat((night1 + night2).toFixed(2));
+          splitData = { start: newShiftStart2, end: newShiftEnd2 };
+      }
       setCustomShifts(p => ({
           ...p,
           [newShiftCode.toUpperCase()]: {
@@ -568,12 +583,14 @@ const Workspace = ({
               nightHours,
               colorHex: newShiftColorHex,
               color: '',
-              desc: `${newShiftStart}-${newShiftEnd}`,
+              desc: newShiftSplit && splitData ? `${newShiftStart}-${newShiftEnd} / ${splitData.start}-${splitData.end}` : `${newShiftStart}-${newShiftEnd}`,
               startTime: newShiftStart,
+              ...(splitData ? { split: splitData } : {}),
           }
       }));
       setShowShiftModal(false);
       setNewShiftCode(''); setNewShiftDesc(''); setNewShiftStart(''); setNewShiftEnd('');
+      setNewShiftSplit(false); setNewShiftStart2(''); setNewShiftEnd2('');
   };
 
   const deleteCustomShift = (code) => {
@@ -1145,10 +1162,16 @@ const Workspace = ({
       {showShiftModal && (() => {
           const startDec = newShiftStart ? timeToDecimal(newShiftStart) : null;
           const endDec = newShiftEnd ? timeToDecimal(newShiftEnd) : null;
-          const durationHours = (startDec !== null && endDec !== null) ? ((endDec - startDec + 24) % 24) : 0;
+          const dur1 = (startDec !== null && endDec !== null) ? ((endDec - startDec + 24) % 24) : 0;
+          const start2Dec = newShiftSplit && newShiftStart2 ? timeToDecimal(newShiftStart2) : null;
+          const end2Dec = newShiftSplit && newShiftEnd2 ? timeToDecimal(newShiftEnd2) : null;
+          const dur2 = (start2Dec !== null && end2Dec !== null) ? ((end2Dec - start2Dec + 24) % 24) : 0;
+          const durationHours = dur1 + dur2;
           const durationH = Math.floor(durationHours);
           const durationM = Math.round((durationHours - durationH) * 60);
-          const nightH = (startDec !== null && durationHours > 0) ? calculateNightHoursForShift(startDec, durationHours) : 0;
+          const night1 = (startDec !== null && dur1 > 0) ? calculateNightHoursForShift(startDec, dur1) : 0;
+          const night2 = (start2Dec !== null && dur2 > 0) ? calculateNightHoursForShift(start2Dec, dur2) : 0;
+          const nightH = parseFloat((night1 + night2).toFixed(2));
           const previewStyle = shiftStyleFromHex(newShiftColorHex);
           const hasAll = newShiftCode && newShiftStart && newShiftEnd;
           const QUICK_COLORS = ['#6366f1','#f97316','#10b981','#f43f5e','#8b5cf6','#0ea5e9','#eab308','#14b8a6','#ec4899','#64748b'];
@@ -1175,6 +1198,7 @@ const Workspace = ({
                     {hasAll ? (
                       <p className="text-xs text-slate-500 mt-0.5">
                         {newShiftStart} → {newShiftEnd}
+                        {newShiftSplit && newShiftStart2 && newShiftEnd2 && ` / ${newShiftStart2} → ${newShiftEnd2}`}
                         {' · '}{durationH > 0 ? `${durationH}h` : ''}{durationM > 0 ? ` ${durationM}min` : ''}
                         {nightH > 0 ? ` · 🌙 ${nightH}h` : ''}
                       </p>
@@ -1202,24 +1226,57 @@ const Workspace = ({
 
                 {/* Horario: entrada → salida */}
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Horario</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-[10px] text-slate-400 mb-1">Entrada</p>
-                      <input type="time" value={newShiftStart} onChange={e => setNewShiftStart(e.target.value)}
-                        className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Horario</label>
+                    <button
+                      onClick={() => { setNewShiftSplit(!newShiftSplit); if(newShiftSplit){ setNewShiftStart2(''); setNewShiftEnd2(''); }}}
+                      className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full border transition-colors ${newShiftSplit ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
+                    >
+                      <Layers className="w-3 h-3" />
+                      Jornada partida
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] text-slate-400 mb-1">{newShiftSplit ? 'Entrada 1ª parte' : 'Entrada'}</p>
+                        <input type="time" value={newShiftStart} onChange={e => setNewShiftStart(e.target.value)}
+                          className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 mb-1">{newShiftSplit ? 'Salida 1ª parte' : 'Salida'}</p>
+                        <input type="time" value={newShiftEnd} onChange={e => setNewShiftEnd(e.target.value)}
+                          className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[10px] text-slate-400 mb-1">Salida</p>
-                      <input type="time" value={newShiftEnd} onChange={e => setNewShiftEnd(e.target.value)}
-                        className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-slate-400" />
-                    </div>
+                    {newShiftSplit && (
+                      <>
+                        <div className="flex items-center gap-2 text-[10px] text-amber-600 font-medium py-1">
+                          <div className="flex-1 border-t border-dashed border-amber-300" />
+                          <span>Descanso</span>
+                          <div className="flex-1 border-t border-dashed border-amber-300" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-[10px] text-slate-400 mb-1">Entrada 2ª parte</p>
+                            <input type="time" value={newShiftStart2} onChange={e => setNewShiftStart2(e.target.value)}
+                              className="w-full p-2.5 border border-amber-300 rounded-lg text-sm bg-amber-50 font-mono focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-slate-400 mb-1">Salida 2ª parte</p>
+                            <input type="time" value={newShiftEnd2} onChange={e => setNewShiftEnd2(e.target.value)}
+                              className="w-full p-2.5 border border-amber-300 rounded-lg text-sm bg-amber-50 font-mono focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                   {hasAll && durationHours > 0 && (
                     <div className="mt-2 flex items-center gap-3 text-xs bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
                       <span className="font-bold text-slate-700">
                         {durationH > 0 ? `${durationH}h` : ''}{durationM > 0 ? ` ${durationM}min` : ''}
                       </span>
+                      {newShiftSplit && dur2 > 0 && <span className="text-amber-600 font-medium">Jornada partida ({Math.floor(dur1)}h + {Math.floor(dur2)}h)</span>}
                       {nightH > 0 && <span className="text-indigo-600 font-medium">🌙 {nightH}h nocturnas (auto)</span>}
                     </div>
                   )}
