@@ -2112,31 +2112,7 @@ const SentinelProjectManager = () => {
             )}
           </div>
         </div>
-        <div className="relative group hidden md:block">
-          <div className="text-xs text-slate-500 font-mono bg-slate-800 px-2 py-1 rounded cursor-default select-none">v6.0 Pro</div>
-          <div className="absolute bottom-full right-0 mb-2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-4 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150 z-[9999]">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Novedades v6.0</p>
-            <ul className="space-y-2">
-              {[
-                ["🗓️", "Jornada partida", "Turnos con dos bloques horarios (ej. 10-14 / 17-21)"],
-                ["⏱️", "Horas semanales", "Alta de personal con jornada contractual y cálculo de extras"],
-                ["🕐", "Horario de servicio", "Define la ventana horaria del servicio y sus descansos"],
-                ["📅", "Botón Hoy", "Vuelve al mes actual con un clic"],
-                ["📶", "Separador de semanas", "Línea visual en cada lunes del cuadrante"],
-                ["📱", "Rotación en móvil", "Acceso directo en la barra superior"],
-                ["💡", "Tutorial inicial", "Guía de 4 pasos para nuevos usuarios"],
-              ].map(([icon, title, desc]) => (
-                <li key={title} className="flex gap-2.5 items-start">
-                  <span className="text-base leading-none mt-0.5">{icon}</span>
-                  <span>
-                    <span className="text-white text-xs font-bold">{title}</span>
-                    <span className="text-slate-400 text-xs block">{desc}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+        <a href="https://github.com/Dkingsito/shifter" target="_blank" rel="noopener noreferrer" className="text-xs text-slate-500 hidden md:block font-mono bg-slate-800 px-2 py-1 rounded hover:text-slate-300 transition-colors">v6.0 Pro</a>
       </div>
 
       <Workspace 
