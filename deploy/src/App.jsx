@@ -36,8 +36,8 @@ const getShiftProps = (data) => {
 };
 
 const INITIAL_STAFF = [
-  { id: 1, name: 'Vigilante 1', hoursContract: 162, role: 'VS' },
-  { id: 2, name: 'Vigilante 2', hoursContract: 162, role: 'VS' },
+  { id: 1, name: 'Empleado 1', hoursContract: 162, role: 'VS' },
+  { id: 2, name: 'Empleado 2', hoursContract: 162, role: 'VS' },
 ];
 
 // --- UTILIDADES ---
@@ -1396,8 +1396,8 @@ const Workspace = ({
             <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in">
                 <div className="bg-white rounded-xl shadow-2xl p-6 w-[90%] max-w-sm mx-4 text-center">
                     <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4 mx-auto"><AlertTriangle className="w-6 h-6 text-red-600" /></div>
-                    <h3 className="text-lg font-bold text-slate-800 mb-2">{pendingAction === 'clear' ? '¿Limpiar Cuadrante?' : '¿Eliminar Vigilante?'}</h3>
-                    <p className="text-sm text-slate-500 mb-6">{pendingAction === 'clear' ? 'Se borrarán todos los turnos asignados.' : 'El vigilante se eliminará permanentemente.'}</p>
+                    <h3 className="text-lg font-bold text-slate-800 mb-2">{pendingAction === 'clear' ? '¿Limpiar Cuadrante?' : '¿Eliminar empleado?'}</h3>
+                    <p className="text-sm text-slate-500 mb-6">{pendingAction === 'clear' ? 'Se borrarán todos los turnos asignados.' : 'Se eliminará del cuadrante y no se podrá recuperar.'}</p>
                     <div className="flex w-full gap-3">
                             <button onClick={() => setShowConfirmModal(false)} className="flex-1 px-4 py-2 bg-slate-100 font-bold rounded-lg">Cancelar</button><button onClick={() => { handleConfirmAction(); setShowConfirmModal(false); }} className="flex-1 px-4 py-2 bg-red-600 text-white font-bold rounded-lg">Confirmar</button>
                     </div>
