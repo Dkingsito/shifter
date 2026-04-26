@@ -212,9 +212,10 @@ const Workspace = ({
   const [pendingAction, setPendingAction] = useState(null);
   const [pendingId, setPendingId] = useState(null);
   const [showLegend, setShowLegend] = useState(false);
-  const [showMobileMenu, setShowMobileMenu] = useState(false); 
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showDesktopMenu, setShowDesktopMenu] = useState(false);
   const [showInstallHelp, setShowInstallHelp] = useState(false);
+  const [tipStep, setTipStep] = useState(() => localStorage.getItem('sentinel_tips_done') ? null : 0);
   
   const [isRenamingService, setIsRenamingService] = useState(false);
   const [tempServiceName, setTempServiceName] = useState(projectName);
@@ -222,6 +223,7 @@ const Workspace = ({
   const [showInputModal, setShowInputModal] = useState(false);
   const [inputName, setInputName] = useState('');
   const [inputRole, setInputRole] = useState('VS');
+  const [inputWeeklyHours, setInputWeeklyHours] = useState(40);
   const [inputMode, setInputMode] = useState('add');
   const [editingId, setEditingId] = useState(null);
 
@@ -285,6 +287,7 @@ const Workspace = ({
   useEffect(() => localStorage.setItem(K('holidays'), JSON.stringify(customHolidays)), [customHolidays, projectId]);
   useEffect(() => localStorage.setItem(K('custom_shifts'), JSON.stringify(customShifts)), [customShifts, projectId]);
   useEffect(() => localStorage.setItem(K('service_hours'), JSON.stringify(serviceHours)), [serviceHours, projectId]);
+  useEffect(() => { if (serviceHours.enabled && serviceHours.start) setStartHour(serviceHours.start); }, [serviceHours.enabled, serviceHours.start]);
 
   // Sync — persistencia código y última sync
   useEffect(() => { if (syncCode) localStorage.setItem(`sentinel_sync_${projectId}`, syncCode); }, [syncCode, projectId]);
@@ -599,17 +602,18 @@ const Workspace = ({
 
   const handleSaveInputName = () => {
     if (!inputName.trim()) return;
+    const hoursContract = Math.round(inputWeeklyHours * 4.33);
     if (inputMode === 'add') {
         const newId = staff.length > 0 ? Math.max(...staff.map(s => s.id)) + 1 : 1;
-        setStaff([...staff, { id: newId, name: inputName, hoursContract: 162, role: inputRole }]);
+        setStaff([...staff, { id: newId, name: inputName, hoursContract, weeklyHours: inputWeeklyHours, role: inputRole }]);
     } else {
-        setStaff(staff.map(s => s.id === editingId ? { ...s, name: inputName, role: inputRole } : s));
+        setStaff(staff.map(s => s.id === editingId ? { ...s, name: inputName, role: inputRole, hoursContract, weeklyHours: inputWeeklyHours } : s));
     }
     setShowInputModal(false);
   };
 
-  const openAddEmployeeModal = () => { setInputMode('add'); setInputName(''); setInputRole('VS'); setShowInputModal(true); };
-  const openEditEmployeeModal = (employee) => { setInputMode('edit'); setInputName(employee.name); setInputRole(employee.role || 'VS'); setEditingId(employee.id); setShowInputModal(true); };
+  const openAddEmployeeModal = () => { setInputMode('add'); setInputName(''); setInputRole('VS'); setInputWeeklyHours(40); setShowInputModal(true); };
+  const openEditEmployeeModal = (employee) => { setInputMode('edit'); setInputName(employee.name); setInputRole(employee.role || 'VS'); setInputWeeklyHours(employee.weeklyHours || Math.round((employee.hoursContract || 162) / 4.33)); setEditingId(employee.id); setShowInputModal(true); };
 
   const handleConfirmAction = () => {
     if (pendingAction === 'clear') {
@@ -957,15 +961,17 @@ const Workspace = ({
             )}
          </div>
          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5">
-                <Clock className="w-3.5 h-3.5 text-slate-400" />
-                <input
-                    type="time"
-                    value={startHour}
-                    onChange={(e) => setStartHour(e.target.value)}
-                    className="text-xs font-mono outline-none text-slate-700 bg-transparent w-16"
-                />
-            </div>
+            {!serviceHours.enabled && (
+              <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5">
+                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  <input
+                      type="time"
+                      value={startHour}
+                      onChange={(e) => setStartHour(e.target.value)}
+                      className="text-xs font-mono outline-none text-slate-700 bg-transparent w-16"
+                  />
+              </div>
+            )}
             <div className="flex bg-slate-800 rounded-lg overflow-hidden shadow">
                 {['8H', '12H'].map(m => <button key={m} onClick={() => setMode(m)} className={`px-3 py-1.5 text-xs font-bold transition-colors ${mode === m ? 'bg-blue-500 text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}>{m}</button>)}
             </div>
@@ -1000,6 +1006,7 @@ const Workspace = ({
 
             {staff.map((emp, empIdx) => {
                 const stats = calculateStats(emp.id);
+                const overtime = Math.max(0, Math.round((stats.total - emp.hoursContract) * 10) / 10);
                 const hClass = stats.total > emp.hoursContract ? 'text-red-500 font-bold' : (stats.total < emp.hoursContract - 12 ? 'text-amber-500' : 'text-emerald-600');
                 const rowBg = empIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50';
                 return (
@@ -1066,10 +1073,14 @@ const Workspace = ({
                                   <div className="flex items-baseline gap-1 w-full">
                                     <span className="text-[9px] font-bold text-slate-400 uppercase">Hrs</span>
                                     <span className={`text-sm font-bold leading-none ${hClass}`}>{stats.total}</span>
+                                    <span className="text-[9px] text-slate-300">/{emp.hoursContract}</span>
                                   </div>
-                                  <div className="flex items-center gap-2 text-slate-400">
-                                    <span className="flex items-center gap-0.5 text-[9px]"><Moon className="w-2.5 h-2.5" />{stats.night}</span>
-                                    <span className="flex items-center gap-0.5 text-[9px]"><Gift className="w-2.5 h-2.5" />{stats.festive}</span>
+                                  <div className="flex items-center gap-2">
+                                    {overtime > 0
+                                      ? <span className="flex items-center gap-0.5 text-[9px] text-red-500 font-bold">+{overtime}h ext.</span>
+                                      : <span className="flex items-center gap-0.5 text-[9px] text-slate-400"><Moon className="w-2.5 h-2.5" />{stats.night}</span>
+                                    }
+                                    <span className="flex items-center gap-0.5 text-[9px] text-slate-400"><Gift className="w-2.5 h-2.5" />{stats.festive}</span>
                                   </div>
                                 </>
                             )}
@@ -1149,12 +1160,54 @@ const Workspace = ({
 
       {/* MODALES */}
       {showInputModal && (
-        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white p-6 rounded-lg shadow-xl w-80">
-                <h3 className="font-bold text-lg mb-4">{inputMode === 'add' ? 'Nuevo Personal' : 'Editar Datos'}</h3>
-                <input autoFocus value={inputName} onChange={e => setInputName(e.target.value)} placeholder="Nombre" className="w-full p-2 border rounded mb-2" />
-                <input value={inputRole} onChange={e => setInputRole(e.target.value)} placeholder="Rol (Ej: VS)" className="w-full p-2 border rounded mb-4" />
-                <div className="flex gap-2"><button onClick={() => setShowInputModal(false)} className="flex-1 p-2 bg-slate-200 rounded">Cancelar</button><button onClick={handleSaveInputName} className="flex-1 p-2 bg-blue-600 text-white rounded">Guardar</button></div>
+        <div className="fixed inset-0 z-[3000] flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-white w-full md:max-w-sm rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
+                <div className="bg-slate-800 text-white px-5 py-4 flex justify-between items-center">
+                    <h3 className="font-bold text-base">{inputMode === 'add' ? 'Nuevo personal' : 'Editar datos'}</h3>
+                    <button onClick={() => setShowInputModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+                </div>
+                <div className="p-5 space-y-4">
+                    <div className="grid grid-cols-3 gap-3">
+                        <div className="col-span-2">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Nombre</label>
+                            <input autoFocus value={inputName} onChange={e => setInputName(e.target.value)} placeholder="Nombre completo"
+                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Rol</label>
+                            <input value={inputRole} onChange={e => setInputRole(e.target.value.toUpperCase())} placeholder="VS"
+                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50 font-bold text-center focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Jornada semanal</label>
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5">
+                                <input type="number" min="1" max="40" value={inputWeeklyHours}
+                                    onChange={e => setInputWeeklyHours(Math.max(1, Math.min(40, Number(e.target.value))))}
+                                    className="w-12 text-lg font-bold text-center bg-transparent outline-none text-slate-800" />
+                                <span className="text-sm text-slate-500">h / semana</span>
+                            </div>
+                            <div className="text-right shrink-0">
+                                <p className="text-xs text-slate-400">≈ mensual</p>
+                                <p className="text-sm font-bold text-slate-700">{Math.round(inputWeeklyHours * 4.33)}h</p>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                            {[20, 30, 35, 40].map(h => (
+                                <button key={h} onClick={() => setInputWeeklyHours(h)}
+                                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-colors ${inputWeeklyHours === h ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
+                                    {h}h
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+                <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
+                    <button onClick={() => setShowInputModal(false)} className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200">Cancelar</button>
+                    <button onClick={handleSaveInputName} disabled={!inputName.trim()}
+                        className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-40">Guardar</button>
+                </div>
             </div>
         </div>
       )}
@@ -1868,6 +1921,45 @@ const Workspace = ({
             </div>
         </div>
       )}
+
+      {/* ONBOARDING TIPS */}
+      {tipStep !== null && (() => {
+        const tips = [
+          { title: 'Añade personal', body: 'Pulsa el botón azul "Alta" para dar de alta a los empleados del servicio.', arrow: 'top-right' },
+          { title: 'Asigna turnos', body: 'Toca cualquier celda del cuadrante para asignar o cambiar el turno de ese día.', arrow: 'center' },
+          { title: 'Plantilla de rotación', body: 'Usa el icono de calendario para aplicar automáticamente un patrón de rotación a todo el mes.', arrow: 'top-right' },
+          { title: 'Sincroniza con el móvil', body: 'Pulsa el botón de sync y escanea el QR desde el móvil para trabajar en ambos dispositivos.', arrow: 'top-right' },
+        ];
+        const tip = tips[tipStep];
+        const isLast = tipStep === tips.length - 1;
+        const dismiss = () => { localStorage.setItem('sentinel_tips_done', '1'); setTipStep(null); };
+        return (
+          <div className="fixed inset-0 z-[3500] pointer-events-none">
+            <div className="pointer-events-auto fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-sm">
+              <div className="bg-slate-900 text-white rounded-2xl shadow-2xl overflow-hidden">
+                <div className="px-4 pt-4 pb-1 flex items-center justify-between">
+                  <div className="flex gap-1">
+                    {tips.map((_, i) => (
+                      <div key={i} className={`h-1 rounded-full transition-all ${i === tipStep ? 'w-6 bg-blue-400' : i < tipStep ? 'w-2 bg-slate-500' : 'w-2 bg-slate-700'}`} />
+                    ))}
+                  </div>
+                  <button onClick={dismiss} className="text-slate-500 hover:text-slate-300 text-xs">Omitir</button>
+                </div>
+                <div className="px-4 py-3">
+                  <p className="font-bold text-sm text-white">{tip.title}</p>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">{tip.body}</p>
+                </div>
+                <div className="px-4 pb-4 flex justify-end">
+                  {isLast
+                    ? <button onClick={dismiss} className="px-4 py-2 bg-blue-500 hover:bg-blue-400 text-white text-xs font-bold rounded-xl">Empezar</button>
+                    : <button onClick={() => setTipStep(tipStep + 1)} className="px-4 py-2 bg-blue-500 hover:bg-blue-400 text-white text-xs font-bold rounded-xl">Siguiente →</button>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
