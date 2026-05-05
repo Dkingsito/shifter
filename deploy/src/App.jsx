@@ -602,7 +602,7 @@ const Workspace = ({
 
   const handleSaveInputName = () => {
     if (!inputName.trim()) return;
-    const hoursContract = Math.round(inputWeeklyHours * 4.33);
+    const hoursContract = inputWeeklyHours * 4;
     if (inputMode === 'add') {
         const newId = staff.length > 0 ? Math.max(...staff.map(s => s.id)) + 1 : 1;
         setStaff([...staff, { id: newId, name: inputName, hoursContract, weeklyHours: inputWeeklyHours, role: inputRole }]);
@@ -613,7 +613,7 @@ const Workspace = ({
   };
 
   const openAddEmployeeModal = () => { setInputMode('add'); setInputName(''); setInputRole('VS'); setInputWeeklyHours(40); setShowInputModal(true); };
-  const openEditEmployeeModal = (employee) => { setInputMode('edit'); setInputName(employee.name); setInputRole(employee.role || 'VS'); setInputWeeklyHours(employee.weeklyHours || Math.round((employee.hoursContract || 162) / 4.33)); setEditingId(employee.id); setShowInputModal(true); };
+  const openEditEmployeeModal = (employee) => { setInputMode('edit'); setInputName(employee.name); setInputRole(employee.role || 'VS'); setInputWeeklyHours(employee.weeklyHours || (employee.hoursContract || 160) / 4); setEditingId(employee.id); setShowInputModal(true); };
 
   const handleConfirmAction = () => {
     if (pendingAction === 'clear') {
@@ -1190,7 +1190,7 @@ const Workspace = ({
                             </div>
                             <div className="text-right shrink-0">
                                 <p className="text-xs text-slate-400">≈ mensual</p>
-                                <p className="text-sm font-bold text-slate-700">{Math.round(inputWeeklyHours * 4.33)}h</p>
+                                <p className="text-sm font-bold text-slate-700">{inputWeeklyHours * 4}h</p>
                             </div>
                         </div>
                         <div className="flex gap-2 mt-2">
